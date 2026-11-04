@@ -43,6 +43,8 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
     private lateinit var btnLasso: ImageButton
     private lateinit var btnUndo: ImageButton
     private lateinit var btnRedo: ImageButton
+    private lateinit var titleView: TextView
+    private var noteTitle = ""
 
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -62,6 +64,8 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         canvasView.listener = this
         val toolbar = findViewById<LinearLayout>(R.id.toolbar)
         val title = findViewById<TextView>(R.id.title)
+        titleView = title
+        title.setOnClickListener { renameNote() }
         btnPen = findViewById(R.id.btn_pen)
         btnHighlighter = findViewById(R.id.btn_highlighter)
         btnEraser = findViewById(R.id.btn_eraser)
@@ -106,6 +110,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
                     Toast.makeText(this, R.string.load_failed, Toast.LENGTH_LONG).show()
                     finish(); return@post
                 }
+                noteTitle = doc.title
                 title.text = doc.title.ifEmpty { getString(R.string.untitled) }
                 val cache = PdfPageCache(store.pdfDir(dir), { canvasView.docFileName(it) }) { canvasView.invalidate() }
                 canvasView.setDocument(doc, cache)
@@ -241,8 +246,10 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         m.menu.add(0, 2, 1, R.string.show_grid).apply { isCheckable = true; isChecked = canvasView.showGrid }
         m.menu.add(0, 3, 2, R.string.fit_content)
         m.menu.add(0, 4, 3, R.string.reset_zoom)
+        m.menu.add(0, 5, 4, R.string.rename_note)
         m.setOnMenuItemClickListener {
             when (it.itemId) {
+                5 -> { renameNote(); return@setOnMenuItemClickListener true }
                 1 -> canvasView.fingerDraws = !canvasView.fingerDraws
                 2 -> canvasView.showGrid = !canvasView.showGrid
                 3 -> canvasView.zoomToFit()
@@ -251,6 +258,16 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             saveSettings(); true
         }
         m.show()
+    }
+
+    /** The name is note metadata, so it is written right away (independent of saving the ink). */
+    private fun renameNote() {
+        if (!loaded) return
+        showNameDialog(this, R.string.rename_note, noteTitle) { t ->
+            noteTitle = t
+            titleView.text = t.ifEmpty { getString(R.string.untitled) }
+            io.execute { runCatching { store.writeTitle(dir, t) } }
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

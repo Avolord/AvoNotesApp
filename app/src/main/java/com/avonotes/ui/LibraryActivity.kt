@@ -10,11 +10,9 @@ import android.text.format.DateUtils
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
-import android.widget.EditText
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
-import android.widget.FrameLayout
 import android.widget.GridView
 import android.widget.ImageView
 import android.widget.TextView
@@ -57,10 +55,12 @@ class LibraryActivity : Activity() {
         grid.setOnItemLongClickListener { _, _, pos, _ -> showActions(notes[pos]); true }
 
         findViewById<View>(R.id.btn_new).setOnClickListener {
-            val title = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date())
-            io.execute {
-                val dir = store.create(title)
-                main.post { open(dir) }
+            val suggested = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date())
+            showNameDialog(this, R.string.name_new_note, suggested, R.string.create) { title ->
+                io.execute {
+                    val dir = store.create(title)
+                    main.post { open(dir) }
+                }
             }
         }
         findViewById<View>(R.id.btn_import).setOnClickListener {
@@ -139,19 +139,9 @@ class LibraryActivity : Activity() {
     }
 
     private fun rename(note: NoteStore.NoteInfo) {
-        val input = EditText(this).apply { setText(note.title); setSelectAllOnFocus(true) }
-        val pad = (20 * resources.displayMetrics.density).toInt()
-        val frame = FrameLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.rename)
-            .setView(frame)
-            .setPositiveButton(R.string.ok) { _, _ ->
-                val t = input.text.toString().trim()
-                io.execute { store.writeTitle(note.dir, t); main.post { refresh() } }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-        input.requestFocus()
+        showNameDialog(this, R.string.rename_note, note.title) { t ->
+            io.execute { store.writeTitle(note.dir, t); main.post { refresh() } }
+        }
     }
 
     private fun export(note: NoteStore.NoteInfo) {

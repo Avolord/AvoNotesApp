@@ -6,6 +6,9 @@
     <string name="untitled">Untitled</string>
     <string name="empty_library">No notes yet. Tap “New note” to start.</string>
     <string name="rename">Rename</string>
+    <string name="rename_note">Rename note</string>
+    <string name="name_new_note">Name your note</string>
+    <string name="create">Create</string>
     <string name="export">Export…</string>
     <string name="delete">Delete</string>
     <string name="delete_confirm">Delete “%1$s”? This cannot be undone.</string>
