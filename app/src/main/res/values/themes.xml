@@ -26,4 +26,9 @@
         <item name="android:background">@drawable/tool_bg</item>
         <item name="android:tint">@color/icon</item>
     </style>
+
+    <!-- Same, but untinted: the icon is colored in code (pen / marker ink color). -->
+    <style name="ToolButton.Ink">
+        <item name="android:tint">@null</item>
+    </style>
 </resources>

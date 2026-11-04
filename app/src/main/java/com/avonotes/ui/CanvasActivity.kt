@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -42,7 +43,6 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
     private lateinit var btnLasso: ImageButton
     private lateinit var btnUndo: ImageButton
     private lateinit var btnRedo: ImageButton
-    private lateinit var btnColor: View
 
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -68,7 +68,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         btnLasso = findViewById(R.id.btn_lasso)
         btnUndo = findViewById(R.id.btn_undo)
         btnRedo = findViewById(R.id.btn_redo)
-        btnColor = findViewById(R.id.btn_color)
+        // btnPen / btnHighlighter use the untinted ToolButton.Ink style; updateToolUi() colors them.
 
         // Toolbar sits under the status bar; the canvas itself draws edge to edge.
         toolbar.setOnApplyWindowInsetsListener { v, insets ->
@@ -86,7 +86,11 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         btnHighlighter.setOnClickListener { selectTool(Tool.HIGHLIGHTER, it) }
         btnEraser.setOnClickListener { selectTool(Tool.ERASER, it) }
         btnLasso.setOnClickListener { selectTool(Tool.LASSO, it) }
-        btnColor.setOnClickListener { showPenPopup(it) }
+        // Long-press opens color and width too (tapping the active tool again also does).
+        btnPen.setOnLongClickListener { canvasView.tool = Tool.PEN; updateToolUi(); showPenPopup(it); true }
+        btnHighlighter.setOnLongClickListener {
+            canvasView.tool = Tool.HIGHLIGHTER; updateToolUi(); showPenPopup(it); true
+        }
         btnUndo.setOnClickListener { canvasView.undo() }
         btnRedo.setOnClickListener { canvasView.redo() }
         findViewById<View>(R.id.btn_pdf).setOnClickListener { pickPdf() }
@@ -163,12 +167,13 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         btnHighlighter.isSelected = canvasView.tool == Tool.HIGHLIGHTER
         btnEraser.isSelected = canvasView.tool == Tool.ERASER
         btnLasso.isSelected = canvasView.tool == Tool.LASSO
-        val c = if (canvasView.tool == Tool.HIGHLIGHTER) canvasView.highlighterColor else canvasView.penColor
-        btnColor.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(c or 0xFF000000.toInt())
-            setStroke((1.5f * resources.displayMetrics.density).toInt(), 0x33000000)
+        // The pen is drawn in its ink color; the marker keeps its outline and gets an ink swatch.
+        btnPen.setImageDrawable(getDrawable(R.drawable.ic_pen)!!.mutate().apply { setTint(canvasView.penColor) })
+        val body = getDrawable(R.drawable.ic_highlighter)!!.mutate().apply { setTint(getColor(R.color.icon)) }
+        val ink = getDrawable(R.drawable.ic_highlighter_ink)!!.mutate().apply {
+            setTint(canvasView.highlighterColor or 0xFF000000.toInt())
         }
+        btnHighlighter.setImageDrawable(LayerDrawable(arrayOf(body, ink)))
     }
 
     private fun showPenPopup(anchor: View) {
@@ -225,7 +230,8 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
                 override fun onStopTrackingTouch(sb: SeekBar) {}
             })
         }
-        box.addView(seek, LinearLayout.LayoutParams((260 * d).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT))
+        // Match the swatch row's width so no swatch gets clipped.
+        box.addView(seek, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         popup.showAsDropDown(anchor, 0, (4 * d).toInt(), Gravity.START)
     }
 

@@ -36,22 +36,14 @@
             android:textColor="@color/icon"
             android:textSize="16sp" />
 
-        <ImageButton android:id="@+id/btn_pen" style="@style/ToolButton"
+        <ImageButton android:id="@+id/btn_pen" style="@style/ToolButton.Ink"
             android:contentDescription="@string/pen" android:src="@drawable/ic_pen" />
-        <ImageButton android:id="@+id/btn_highlighter" style="@style/ToolButton"
+        <ImageButton android:id="@+id/btn_highlighter" style="@style/ToolButton.Ink"
             android:contentDescription="@string/highlighter" android:src="@drawable/ic_highlighter" />
         <ImageButton android:id="@+id/btn_eraser" style="@style/ToolButton"
             android:contentDescription="@string/eraser" android:src="@drawable/ic_eraser" />
         <ImageButton android:id="@+id/btn_lasso" style="@style/ToolButton"
             android:contentDescription="@string/lasso" android:src="@drawable/ic_lasso" />
-
-        <View
-            android:id="@+id/btn_color"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:contentDescription="@string/color_and_width" />
 
         <View android:layout_width="1dp" android:layout_height="24dp"
             android:layout_marginStart="4dp" android:layout_marginEnd="4dp"
