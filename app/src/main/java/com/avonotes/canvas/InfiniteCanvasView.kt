@@ -170,7 +170,32 @@ class InfiniteCanvasView @JvmOverloads constructor(
     }
     private val lassoPath = Path()
     private var gridBuf = FloatArray(0)
-    private val paperColor = 0xFFFCFCFA.toInt()
+    private var paperColor = 0xFFFCFCFA.toInt()
+    private val patchPaint = Paint()
+
+    /** Dark mode: dark paper, inverted PDF pages, pen ink shown light. Stored data is unchanged. */
+    var dark = false
+        set(v) {
+            if (field == v) return
+            field = v
+            renderer.dark = v
+            tiles.invalidateAll()
+            floatingNode.discardDisplayList()
+            if (mode == Mode.MOVE) recordFloating()
+            paperColor = if (v) 0xFF1E1E1C.toInt() else 0xFFFCFCFA.toInt()
+            pageFill.color = if (v) DarkInk.map(Color.WHITE) else Color.WHITE
+            pageBorder.color = if (v) 0x33FFFFFF else 0x22000000
+            gridPaint.color = if (v) 0x33FFFFFF else 0x33000000
+            cursorPaint.color = if (v) 0x88FFFFFF.toInt() else 0x88000000.toInt()
+            val accent = if (v) 0xFF81C784.toInt() else ACCENT
+            dashPaint.color = accent
+            selFill.color = (accent and 0x00FFFFFF) or (if (v) 0x22000000 else 0x14000000)
+            chipPaint.color = if (v) 0xFFE6E6E3.toInt() else 0xFF2B2B2B.toInt()
+            chipText.color = if (v) 0xFF1E1E1C.toInt() else Color.WHITE
+            bmpPaint.colorFilter = if (v) DarkInk.filter else null
+            patchPaint.colorFilter = bmpPaint.colorFilter
+            invalidate()
+        }
 
     private val patchRunnable = Runnable { requestPatches() }
 
@@ -370,6 +395,11 @@ class InfiniteCanvasView @JvmOverloads constructor(
         mode = Mode.MOVE
         // Lift the selected ink out of the tiles into one floating display list.
         for (s in selStrokes) tiles.remove(s)
+        recordFloating()
+        invalidate()
+    }
+
+    private fun recordFloating() {
         if (selStrokes.isNotEmpty()) {
             val b = RectF(selStrokes[0].bounds)
             for (s in selStrokes) b.union(s.bounds)
@@ -880,7 +910,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
             if (!lifted) cache.patchFor(p, zoom)?.let { patch ->
                 val r = patch.region
                 tmpRect.set(r.left * zoom + tx, r.top * zoom + ty, r.right * zoom + tx, r.bottom * zoom + ty)
-                canvas.drawBitmap(patch.bitmap, null, tmpRect, null)
+                canvas.drawBitmap(patch.bitmap, null, tmpRect, patchPaint)
             }
             canvas.drawRect(pageRect, pageBorder)
         }

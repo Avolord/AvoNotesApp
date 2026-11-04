@@ -21,10 +21,14 @@ class StrokeRenderer {
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val path = Path()
 
+    /** Show pen ink in its dark-mode color (see [DarkInk]). Stored colors are unchanged. */
+    var dark = false
+
     fun draw(canvas: Canvas, tool: Tool, color: Int, width: Float, pts: FloatArray, count: Int) {
         if (count <= 0) return
-        paint.color = color
-        dotPaint.color = color
+        val shown = DarkInk.display(color, tool == Tool.HIGHLIGHTER, dark)
+        paint.color = shown
+        dotPaint.color = shown
         if (count == 1) {
             canvas.drawCircle(pts[0], pts[1], widthAt(tool, width, pts[2]) / 2f, dotPaint)
             return

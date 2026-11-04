@@ -9,6 +9,45 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import com.avonotes.R
 
+/** Theme choice (System / Light / Dark), applied app-wide by the system on Android 12+. */
+object ThemePref {
+    const val SYSTEM = 0
+    const val LIGHT = 1
+    const val DARK = 2
+
+    val supported get() = android.os.Build.VERSION.SDK_INT >= 31
+
+    fun get(context: Context) =
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).getInt("theme", SYSTEM)
+
+    fun set(context: Context, value: Int) {
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putInt("theme", value).apply()
+        if (!supported) return
+        val ui = context.getSystemService(android.app.UiModeManager::class.java)
+        // Persisted by the system; running activities get a uiMode configuration change.
+        ui.setApplicationNightMode(
+            when (value) {
+                LIGHT -> android.app.UiModeManager.MODE_NIGHT_NO
+                DARK -> android.app.UiModeManager.MODE_NIGHT_YES
+                else -> android.app.UiModeManager.MODE_NIGHT_AUTO
+            }
+        )
+    }
+
+    fun showDialog(context: Context) {
+        val items = arrayOf(
+            context.getString(R.string.theme_system),
+            context.getString(R.string.theme_light),
+            context.getString(R.string.theme_dark),
+        )
+        AlertDialog.Builder(context)
+            .setTitle(R.string.theme)
+            .setSingleChoiceItems(items, get(context)) { d, which -> d.dismiss(); set(context, which) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+}
+
 /**
  * Asks for a note name. [onName] gets the trimmed text (falls back to [initial] if left blank).
  */

@@ -63,6 +63,10 @@ class LibraryActivity : Activity() {
                 }
             }
         }
+        findViewById<View>(R.id.btn_theme).apply {
+            visibility = if (ThemePref.supported) View.VISIBLE else View.GONE
+            setOnClickListener { ThemePref.showDialog(this@LibraryActivity) }
+        }
         findViewById<View>(R.id.btn_import).setOnClickListener {
             val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)

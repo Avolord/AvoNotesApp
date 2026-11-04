@@ -56,6 +56,11 @@ class TileIndex(private val renderer: StrokeRenderer) {
         count = 0
     }
 
+    /** Forces every tile to re-record (e.g. after switching dark mode). */
+    fun invalidateAll() {
+        for (t in tiles.values) t.dirty = true
+    }
+
     fun add(s: Stroke) {
         val key = keyFor(s)
         s.tileKey = key

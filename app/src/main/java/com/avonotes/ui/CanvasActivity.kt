@@ -2,7 +2,10 @@ package com.avonotes.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.res.Configuration
 import android.os.Build
+import android.view.WindowInsetsController
+import com.avonotes.canvas.DarkInk
 import android.window.OnBackInvokedDispatcher
 import android.content.Intent
 import android.graphics.Color
@@ -115,7 +118,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         btnRedo.setOnClickListener { canvasView.redo() }
         findViewById<View>(R.id.btn_pdf).setOnClickListener { pickPdf() }
         findViewById<View>(R.id.btn_more).setOnClickListener { showMore(it) }
-        updateToolUi()
+        applyTheme()
         onHistoryChanged(false, false)
 
         io.execute {
@@ -133,6 +136,43 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
                 loaded = true
             }
         }
+    }
+
+    /**
+     * This activity handles uiMode changes itself (so switching theme never drops unsaved ink or
+     * undo history), so re-resolve every themed color here.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyTheme()
+    }
+
+    private fun applyTheme() {
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        findViewById<View>(R.id.root).setBackgroundColor(getColor(R.color.paper))
+        val toolbar = findViewById<LinearLayout>(R.id.toolbar)
+        toolbar.setBackgroundColor(getColor(R.color.toolbar_bg))
+        titleView.setTextColor(getColor(R.color.icon))
+        val iconTint = getColorStateList(R.color.icon)
+        for (i in 0 until toolbar.childCount) {
+            when (val v = toolbar.getChildAt(i)) {
+                titleView -> {}
+                is ImageButton -> {
+                    v.background = getDrawable(R.drawable.tool_bg)
+                    if (v !== btnPen && v !== btnHighlighter) v.imageTintList = iconTint
+                }
+                else -> v.setBackgroundColor(getColor(R.color.toolbar_divider))
+            }
+        }
+        val lightBars = if (night) 0 else
+            WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        window.insetsController?.setSystemBarsAppearance(
+            lightBars,
+            WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+        )
+        canvasView.dark = night
+        updateToolUi()
     }
 
     override fun onPause() {
@@ -222,7 +262,8 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         btnEraser.isSelected = canvasView.tool == Tool.ERASER
         btnLasso.isSelected = canvasView.tool == Tool.LASSO
         // The pen is drawn in its ink color; the marker keeps its outline and gets an ink swatch.
-        btnPen.setImageDrawable(getDrawable(R.drawable.ic_pen)!!.mutate().apply { setTint(canvasView.penColor) })
+        val penShown = DarkInk.display(canvasView.penColor, false, canvasView.dark)
+        btnPen.setImageDrawable(getDrawable(R.drawable.ic_pen)!!.mutate().apply { setTint(penShown) })
         val body = getDrawable(R.drawable.ic_highlighter)!!.mutate().apply { setTint(getColor(R.color.icon)) }
         val ink = getDrawable(R.drawable.ic_highlighter_ink)!!.mutate().apply {
             setTint(canvasView.highlighterColor or 0xFF000000.toInt())
@@ -237,8 +278,8 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             orientation = LinearLayout.VERTICAL
             setPadding((12 * d).toInt(), (12 * d).toInt(), (12 * d).toInt(), (8 * d).toInt())
             background = GradientDrawable().apply {
-                setColor(Color.WHITE); cornerRadius = 14 * d
-                setStroke(d.toInt().coerceAtLeast(1), 0x22000000)
+                setColor(getColor(R.color.popup_bg)); cornerRadius = 14 * d
+                setStroke(d.toInt().coerceAtLeast(1), getColor(R.color.popup_border))
             }
             elevation = 8 * d
         }
@@ -254,8 +295,12 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
                 val selected = c == (if (hl) canvasView.highlighterColor else canvasView.penColor)
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
-                    setColor(c or 0xFF000000.toInt())
-                    setStroke(((if (selected) 3f else 1f) * d).toInt(), if (selected) 0xFF2E7D32.toInt() else 0x33000000)
+                    // Show the color as it will appear on this canvas (dark mode maps pen ink).
+                    setColor(DarkInk.display(c, hl, canvasView.dark) or 0xFF000000.toInt())
+                    setStroke(
+                        ((if (selected) 3f else 1f) * d).toInt(),
+                        if (selected) getColor(R.color.accent) else getColor(R.color.popup_border),
+                    )
                 }
                 setOnClickListener {
                     if (hl) canvasView.highlighterColor = c else canvasView.penColor = c
@@ -267,7 +312,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         box.addView(row)
 
         val label = TextView(this).apply {
-            setText(R.string.width); setPadding(0, (10 * d).toInt(), 0, 0); setTextColor(0xFF6B6B66.toInt())
+            setText(R.string.width); setPadding(0, (10 * d).toInt(), 0, 0); setTextColor(getColor(R.color.text_secondary))
         }
         box.addView(label)
         val range = if (hl) 4f..60f else 0.5f..16f
@@ -297,9 +342,11 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         m.menu.add(0, 4, 3, R.string.reset_zoom)
         m.menu.add(0, 5, 4, R.string.rename_note)
         m.menu.add(0, 6, 5, R.string.autosave).apply { isCheckable = true; isChecked = autoSave }
+        if (ThemePref.supported) m.menu.add(0, 7, 6, R.string.theme)
         m.setOnMenuItemClickListener {
             when (it.itemId) {
                 5 -> { renameNote(); return@setOnMenuItemClickListener true }
+                7 -> { ThemePref.showDialog(this); return@setOnMenuItemClickListener true }
                 6 -> {
                     autoSave = !autoSave
                     if (autoSave && dirty) save()

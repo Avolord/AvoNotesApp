@@ -7,6 +7,8 @@
     <color name="tool_selected_bg">#DCEBDD</color>
     <color name="paper">#FCFCFA</color>
     <color name="text_secondary">#6B6B66</color>
+    <color name="popup_bg">#FFFFFF</color>
+    <color name="popup_border">#22000000</color>
 
     <style name="Theme.AvoNotes" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:colorAccent">@color/accent</item>

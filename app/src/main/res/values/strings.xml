@@ -39,6 +39,10 @@
     <string name="saved">Saved</string>
     <string name="save_failed">Saving failed.</string>
     <string name="autosave">Auto-save</string>
+    <string name="theme">Theme</string>
+    <string name="theme_system">Follow system</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
     <string name="discard">Discard</string>
     <string name="unsaved_title">Unsaved changes</string>
     <string name="unsaved_message">Save changes to “%1$s” before closing?</string>
