@@ -58,12 +58,21 @@ jobs:
         if: steps.keystore.outputs.ok == 'true'
         run: cp app/build/outputs/apk/release/app-release.apk "AvoNotes-${GITHUB_REF_NAME}.apk"
 
+      # The release notes are the annotated tag's message (git tag -a vX -F notes.md).
+      - name: Release notes from the tag message
+        if: steps.keystore.outputs.ok == 'true'
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+
       - name: Publish GitHub release
         if: steps.keystore.outputs.ok == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: AvoNotes-${{ github.ref_name }}.apk
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          body_path: ${{ runner.temp }}/notes.md
           generate_release_notes: true
 
       - name: Remove keystore
