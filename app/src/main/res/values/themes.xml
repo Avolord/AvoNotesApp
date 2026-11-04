@@ -52,7 +52,6 @@
         <item name="android:layout_height">match_parent</item>
         <item name="android:layout_weight">1</item>
         <item name="android:background">@drawable/mosaic_tile_bg</item>
-        <item name="android:clipToOutline">true</item>
         <item name="android:scaleType">centerCrop</item>
         <item name="android:importantForAccessibility">no</item>
     </style>

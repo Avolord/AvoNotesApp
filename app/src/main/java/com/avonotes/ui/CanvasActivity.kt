@@ -1,5 +1,6 @@
 package com.avonotes.ui
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.res.Configuration
@@ -248,6 +249,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             .show()
     }
 
+    @SuppressLint("GestureBackNavigation") // API 33+ uses the OnBackInvokedCallback in onCreate
     @Deprecated("Used below API 33; newer versions use the OnBackInvokedCallback.")
     override fun onBackPressed() = attemptClose()
 

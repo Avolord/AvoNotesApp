@@ -1,5 +1,6 @@
 package com.avonotes.ui
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
@@ -222,6 +223,7 @@ class LibraryActivity : Activity() {
         }
     }
 
+    @SuppressLint("GestureBackNavigation") // API 33+ uses the OnBackInvokedCallback above
     @Deprecated("Used below API 33; newer versions use the OnBackInvokedCallback.")
     override fun onBackPressed() {
         if (currentGroupId != null) showGroup(null) else super.onBackPressed()
@@ -514,6 +516,9 @@ class LibraryActivity : Activity() {
                 slot.removeAllViews()
                 card = LayoutInflater.from(this).inflate(wantLayout, slot, false)
                 card.tag = wantLayout
+                // Rounded corners clip the previews (the XML attribute needs API 31; the method doesn't).
+                card.clipToOutline = true
+                for (id in intArrayOf(R.id.t0, R.id.t1, R.id.t2, R.id.t3)) card.findViewById<View>(id)?.clipToOutline = true
                 slot.addView(card)
             }
             bindCard(card, item, previewH)

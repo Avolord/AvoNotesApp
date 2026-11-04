@@ -2,6 +2,10 @@
 build/
 app/build/
 local.properties
+# Release signing secrets: never commit.
+keystore.properties
+*.jks
+*.keystore
 .idea/
 *.iml
 .kotlin/
