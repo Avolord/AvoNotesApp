@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Chisel-tip marker, tilted, above a swatch of ink. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#FF000000" android:pathData="M6,14l3,3v5h6v-5l3,-3V9H6V14zM11,2h2v3h-2V2zM3.5,5.88l1.41,-1.41 2.12,2.12L5.62,8 3.5,5.88zM16.96,6.59l2.12,-2.12 1.41,1.41L18.38,8 16.96,6.59z" />
+    <group android:rotation="35" android:pivotX="12" android:pivotY="10.5">
+        <!-- barrel -->
+        <path android:fillColor="#FF000000"
+            android:pathData="M9.5,1.5h5a1,1 0,0 1,1 1v9h-7v-9a1,1 0,0 1,1 -1z" />
+        <!-- collar -->
+        <path android:fillColor="#FF000000"
+            android:pathData="M8,12.25h8v1.5l-1.5,2h-5l-1.5,-2z" />
+        <!-- chisel tip -->
+        <path android:fillColor="#FF000000"
+            android:pathData="M10,16.25h4v1.25l-4,2.5z" />
+    </group>
+    <!-- ink swatch -->
+    <path android:fillColor="#FF000000"
+        android:pathData="M3,21h18v2.5H3z" />
 </vector>
