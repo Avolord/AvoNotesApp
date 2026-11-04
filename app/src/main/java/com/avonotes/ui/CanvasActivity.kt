@@ -10,7 +10,6 @@ import com.avonotes.canvas.DarkInk
 import android.window.OnBackInvokedDispatcher
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.net.Uri
@@ -24,8 +23,6 @@ import android.view.View
 import android.view.WindowInsets
 import android.widget.ImageButton
 import android.widget.LinearLayout
-import android.widget.PopupWindow
-import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import com.avonotes.R
@@ -39,6 +36,7 @@ import com.avonotes.pdf.PdfPageCache
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
+import kotlin.math.max
 
 class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
     private lateinit var store: NoteStore
@@ -280,18 +278,22 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
     private fun showPenPopup(anchor: View) {
         val hl = canvasView.tool == Tool.HIGHLIGHTER
         val d = resources.displayMetrics.density
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding((12 * d).toInt(), (12 * d).toInt(), (12 * d).toInt(), (8 * d).toInt())
-            background = GradientDrawable().apply {
-                setColor(getColor(R.color.popup_bg)); cornerRadius = 14 * d
-                setStroke(d.toInt().coerceAtLeast(1), getColor(R.color.popup_border))
-            }
-            elevation = 8 * d
+        val panel = PopupPanel(this)
+        val box = panel.box
+        val popup = panel.popup
+        box.setPadding((12 * d).toInt(), (12 * d).toInt(), (12 * d).toInt(), (8 * d).toInt())
+
+        val range = if (hl) 4f..60f else 0.5f..16f
+        // Width preview in the ink color, scaled to the slider: the widest setting fills the box.
+        // (Pen widths are only a few points, so their real size would be a dot when zoomed out.)
+        val preview = SizePreviewView(this)
+        fun updatePreview() {
+            val w = if (hl) canvasView.highlighterWidth else canvasView.penWidth
+            preview.diameter = max(3f * d, PREVIEW_MAX_DP * d * w / range.endInclusive)
+            val c = if (hl) canvasView.highlighterColor else canvasView.penColor
+            preview.color = DarkInk.display(c, hl, canvasView.dark)
         }
-        val popup = PopupWindow(box, LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT, true)
-        popup.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        popup.elevation = 8 * d
+        updatePreview()
 
         // Brush picker (pen tool only): a live sample of each brush in the current color.
         val previews = ArrayList<BrushPreviewView>()
@@ -365,28 +367,16 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         }
         box.addView(row)
 
-        val label = TextView(this).apply {
-            setText(R.string.width); setPadding(0, (10 * d).toInt(), 0, 0); setTextColor(getColor(R.color.text_secondary))
+        val cur = if (hl) canvasView.highlighterWidth else canvasView.penWidth
+        // Widths are in world units, i.e. PDF points.
+        panel.slider(R.string.width, range, cur, { String.format(java.util.Locale.ROOT, "%.1f pt", it) }, preview) { w ->
+            if (hl) canvasView.highlighterWidth = w else canvasView.penWidth = w
+            updatePreview()
         }
-        box.addView(label)
-        val range = if (hl) 4f..60f else 0.5f..16f
-        val seek = SeekBar(this).apply {
-            max = 100
-            val cur = if (hl) canvasView.highlighterWidth else canvasView.penWidth
-            progress = (((cur - range.start) / (range.endInclusive - range.start)) * 100).toInt()
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
-                    val w = range.start + (range.endInclusive - range.start) * p / 100f
-                    if (hl) canvasView.highlighterWidth = w else canvasView.penWidth = w
-                }
-                override fun onStartTrackingTouch(sb: SeekBar) {}
-                override fun onStopTrackingTouch(sb: SeekBar) {}
-            })
-        }
-        // Match the swatch row's width so no swatch gets clipped.
-        box.addView(seek, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        popup.showAsDropDown(anchor, 0, (4 * d).toInt(), Gravity.START)
+        popup.setOnDismissListener { saveSettings() }
+        panel.showBelow(anchor)
     }
+
 
     private fun showEraserPopup(anchor: View) {
         val panel = PopupPanel(this, widthDp = 300)
@@ -401,8 +391,16 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             saveSettings()
         }
         hint = panel.hint(if (canvasView.partialEraser) R.string.eraser_partial_hint else R.string.eraser_stroke_hint)
-        panel.slider(R.string.eraser_size, 4f..48f, canvasView.eraserSize, { "${it.toInt()} dp" }) {
+        val d = resources.displayMetrics.density
+        val preview = SizePreviewView(this).apply {
+            outline = true
+            color = getColor(R.color.icon)
+            diameter = canvasView.eraserSize * 2 * d
+        }
+        // Big enough to show the largest eraser at its real size.
+        panel.slider(R.string.eraser_size, 4f..48f, canvasView.eraserSize, { "${it.toInt()} dp" }, preview, previewDp = 100f) {
             canvasView.eraserSize = it
+            preview.diameter = it * 2 * d
         }
         panel.popup.setOnDismissListener { saveSettings() }
         panel.showBelow(anchor)
@@ -567,6 +565,8 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         const val EXTRA_DIR = "dir"
         private const val REQ_PDF = 10
         private const val AUTOSAVE_DELAY_MS = 1500L
+        /** Width preview circle at the largest width (the preview box is 64 dp). */
+        private const val PREVIEW_MAX_DP = 58f
 
         private val PEN_COLORS = intArrayOf(
             0xFF1A1A1A.toInt(), 0xFF5F6368.toInt(), 0xFF1565C0.toInt(), 0xFFC62828.toInt(),

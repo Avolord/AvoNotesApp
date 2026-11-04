@@ -163,11 +163,26 @@ class PopupPanel(private val context: Context, widthDp: Int = ViewGroup.LayoutPa
         box.addView(row, full().apply { bottomMargin = dp(4f) })
     }
 
-    /** A labelled slider over [range]; [format] renders the current value next to the label. */
+    /**
+     * A labelled slider over [range]; [format] renders the current value next to the label.
+     * An optional [preview] (e.g. a [SizePreviewView]) sits to its left; [onChange] updates it.
+     */
     fun slider(
         labelRes: Int, range: ClosedFloatingPointRange<Float>, value: Float,
-        format: (Float) -> String, onChange: (Float) -> Unit,
+        format: (Float) -> String, preview: View? = null, previewDp: Float = 64f, onChange: (Float) -> Unit,
     ) {
+        val target: LinearLayout
+        if (preview != null) {
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(6f), 0, 0)
+            }
+            row.addView(preview, LinearLayout.LayoutParams(dp(previewDp), dp(previewDp)).apply { marginEnd = dp(10f) })
+            target = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            row.addView(target, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            box.addView(row, full())
+        } else target = box
         val valueView = TextView(context).apply {
             textSize = 13f; setTextColor(context.getColor(R.color.text_secondary)); text = format(value)
         }
@@ -179,9 +194,9 @@ class PopupPanel(private val context: Context, widthDp: Int = ViewGroup.LayoutPa
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(valueView)
         }
-        box.addView(labelRow, full())
+        target.addView(labelRow, full())
         val span = range.endInclusive - range.start
-        box.addView(SeekBar(context).apply {
+        target.addView(SeekBar(context).apply {
             max = 100
             progress = (((value - range.start) / span) * 100).toInt()
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
