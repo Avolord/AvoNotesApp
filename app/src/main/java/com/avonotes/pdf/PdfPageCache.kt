@@ -254,7 +254,9 @@ class PdfPageCache(
         return l
     }
 
-    private fun key(item: PdfPageItem, level: Int) = "${item.docId}#${item.pageIndex}@$level"
+    // The size is part of the key: the same page can be placed (copied, resized) more than once.
+    private fun key(item: PdfPageItem, level: Int) =
+        "${item.docId}#${item.pageIndex}:${item.w.roundToInt()}x${item.h.roundToInt()}@$level"
 
     companion object {
         private const val TAG = "PdfPageCache"

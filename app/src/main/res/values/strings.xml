@@ -11,6 +11,11 @@
     <string name="create">Create</string>
     <string name="export">Export…</string>
     <string name="delete">Delete</string>
+    <string name="copy">Copy</string>
+    <string name="duplicate">Duplicate</string>
+    <string name="paste">Paste</string>
+    <string name="copied">Copied. Long-press empty space to paste.</string>
+    <string name="paste_pages_skipped">PDF pages can only be pasted into the note they came from.</string>
     <string name="delete_confirm">Delete “%1$s”? This cannot be undone.</string>
     <string name="cancel">Cancel</string>
     <string name="ok">OK</string>

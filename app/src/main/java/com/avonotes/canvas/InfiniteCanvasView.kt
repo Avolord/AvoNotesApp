@@ -4,8 +4,10 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.RenderNode
 import android.util.AttributeSet
@@ -23,6 +25,7 @@ import com.avonotes.model.Stroke
 import com.avonotes.model.Tool
 import com.avonotes.pdf.PdfPageCache
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -48,6 +51,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
     interface Listener {
         fun onNoteChanged()
         fun onHistoryChanged(canUndo: Boolean, canRedo: Boolean)
+        /** A short confirmation to show the user (e.g. "Copied"). */
+        fun onMessage(textRes: Int) {}
     }
 
     var listener: Listener? = null
@@ -107,6 +112,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
         ) : Edit()
         /** [pages] are (original index, page), ascending by index. */
         class Delete(val strokes: List<Stroke>, val pages: List<Pair<Int, PdfPageItem>>) : Edit()
+        /** Paste / duplicate: new ink and pages on top. */
+        class AddItems(val strokes: List<Stroke>, val pages: List<PdfPageItem>) : Edit()
     }
     private val undoStack = ArrayDeque<Edit>()
     private val redoStack = ArrayDeque<Edit>()
@@ -116,12 +123,33 @@ class InfiniteCanvasView @JvmOverloads constructor(
     private val selPages = ArrayList<PdfPageItem>()
     private val selBounds = RectF()
     val hasSelection get() = selStrokes.isNotEmpty() || selPages.isNotEmpty()
-    private var moveDx = 0f
-    private var moveDy = 0f
+
+    /** What a drag on the selection does: move it, resize it from a corner, or rotate it. */
+    private enum class Xform { MOVE, SCALE, ROTATE }
+    private var xform = Xform.MOVE
+    /** The in-progress transform of the lifted selection, in world coordinates. */
+    private val liveMatrix = Matrix()
     private var moveStartX = 0f
     private var moveStartY = 0f
+    private var pivotX = 0f // scale anchor (opposite corner) or rotation center, world
+    private var pivotY = 0f
+    private var startDist = 1f
+    private var startAngle = 0f
+    private var liveAngle = 0f
     private val floatingNode = RenderNode("selection").apply { setClipToBounds(false) }
-    private val chipRect = RectF()
+
+    /** Action chips under the selection (screen coordinates), in [CHIP_ACTIONS] order. */
+    private val chipRects = Array(3) { RectF() }
+    private var pressedChip = -1
+    /** Corner resize handles and the rotate handle (screen coordinates; empty when hidden). */
+    private val cornerHandles = FloatArray(8)
+    private val rotateHandle = PointF(Float.NaN, Float.NaN)
+    private var handleCorner = -1
+
+    /** "Paste" chip shown after a long-press on empty canvas, at [pasteX], [pasteY] (world). */
+    private val pasteChip = RectF()
+    private var pasteX = 0f
+    private var pasteY = 0f
 
     // ---------------------------------------------------------------- input state
     private enum class Mode { NONE, DRAW, ERASE, LASSO, MOVE, GESTURE, CHIP }
@@ -185,6 +213,11 @@ class InfiniteCanvasView @JvmOverloads constructor(
         color = Color.WHITE; textSize = 14f * density; textAlign = Paint.Align.CENTER
     }
     private val lassoPath = Path()
+    private val tmpRect2 = RectF()
+    private val handleFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    private val handleStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; color = ACCENT; strokeWidth = 2f * density
+    }
     private var gridBuf = FloatArray(0)
     private var paperColor = 0xFFFCFCFA.toInt()
     private val patchPaint = Paint()
@@ -207,6 +240,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
             cursorPaint.color = if (v) 0x88FFFFFF.toInt() else 0x88000000.toInt()
             val accent = if (v) 0xFF81C784.toInt() else ACCENT
             dashPaint.color = accent
+            handleStroke.color = accent
+            handleFill.color = if (v) 0xFF2B2B29.toInt() else Color.WHITE
             selFill.color = (accent and 0x00FFFFFF) or (if (v) 0x22000000 else 0x14000000)
             chipPaint.color = if (v) 0xFFE6E6E3.toInt() else 0xFF2B2B2B.toInt()
             chipText.color = if (v) 0xFF1E1E1C.toInt() else Color.WHITE
@@ -314,6 +349,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
                 e.strokes.forEach { tiles.remove(it) }
                 pages.removeAll(e.pages.map { it.second }.toSet())
             }
+            is Edit.AddItems -> { e.strokes.forEach { tiles.add(it) }; pages.addAll(e.pages) }
         }
         if (record) record(e)
     }
@@ -341,6 +377,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
                 e.strokes.forEach { tiles.add(it) }
                 for ((i, p) in e.pages) pages.add(min(i, pages.size), p)
             }
+            is Edit.AddItems -> { e.strokes.forEach { tiles.remove(it) }; pages.removeAll(e.pages.toSet()) }
         }
     }
 
@@ -378,6 +415,66 @@ class InfiniteCanvasView @JvmOverloads constructor(
         invalidate()
     }
 
+    // ---------------------------------------------------------------- copy / paste
+
+    /**
+     * Copied ink and pages, relative to the copied area's top-left corner. Shared by all open
+     * notes (it lives as long as the app). Pages only paste into the note they came from, since
+     * they refer to that note's PDF files.
+     */
+    private class Clip(val strokes: List<Stroke>, val pages: List<PdfPageItem>, val docIds: Set<String>, val w: Float, val h: Float)
+
+    fun copySelection(): Boolean {
+        if (!hasSelection || mode == Mode.MOVE) return false
+        val m = Matrix().apply { setTranslate(-selBounds.left, -selBounds.top) }
+        clip = Clip(
+            selStrokes.map { it.transformed(m, 1f) },
+            selPages.map { it.transformed(m) },
+            selPages.map { it.docId }.toSet(),
+            selBounds.width(), selBounds.height(),
+        )
+        listener?.onMessage(com.avonotes.R.string.copied)
+        return true
+    }
+
+    val canPaste get() = clip != null
+
+    /** Copies the selection and pastes it right next to itself (offset down and right). */
+    fun duplicateSelection() {
+        if (!hasSelection || mode == Mode.MOVE) return
+        val c = Clip(
+            selStrokes.map { it.transformed(Matrix(), 1f) }, ArrayList(selPages), emptySet(), 0f, 0f,
+        )
+        val off = DUPLICATE_OFFSET_DP * density / zoom
+        val m = Matrix().apply { setTranslate(off, off) }
+        addCopies(c.strokes, c.pages, m)
+    }
+
+    /** Pastes the clipboard centered on world point (wx, wy), or the middle of the screen. */
+    fun paste(wx: Float = Float.NaN, wy: Float = Float.NaN) {
+        val c = clip ?: return
+        if (mode != Mode.NONE && mode != Mode.GESTURE) return
+        val v = visibleWorld()
+        val cx = if (wx.isNaN()) v.centerX() else wx
+        val cy = if (wy.isNaN()) v.centerY() else wy
+        val m = Matrix().apply { setTranslate(cx - c.w / 2f, cy - c.h / 2f) }
+        // Pages refer to this note's PDFs; from another note only the ink comes along.
+        val ownDocs = pdfDocs.map { it.id }.toSet()
+        val pgs = c.pages.filter { it.docId in ownDocs }
+        if (pgs.size < c.pages.size) listener?.onMessage(com.avonotes.R.string.paste_pages_skipped)
+        addCopies(c.strokes, pgs, m)
+    }
+
+    private fun addCopies(strokes: List<Stroke>, pgs: List<PdfPageItem>, m: Matrix) {
+        if (strokes.isEmpty() && pgs.isEmpty()) return
+        val newStrokes = strokes.sortedBy { it.seq }.map { s -> s.transformed(m, 1f).also { it.seq = nextSeq++ } }
+        val newPages = pgs.map { it.transformed(m) }
+        clearSelection()
+        apply(Edit.AddItems(newStrokes, newPages), record = true)
+        setSelection(newStrokes, newPages)
+        if (newPages.isNotEmpty()) postDelayed(patchRunnable, PATCH_DELAY_MS)
+    }
+
     fun deleteSelection() {
         if (!hasSelection || mode == Mode.MOVE) return
         val idx = selPages.map { pages.indexOf(it) to it }.filter { it.first >= 0 }.sortedBy { it.first }
@@ -390,16 +487,46 @@ class InfiniteCanvasView @JvmOverloads constructor(
         apply(e, record = true)
     }
 
-    /** Selection rectangle in screen coordinates, including any in-progress move. */
+    /** Selection rectangle in screen coordinates (untransformed; see [drawSelection] while dragging). */
     private fun selectionScreenRect(out: RectF): RectF {
         out.set(
-            (selBounds.left + moveDx) * zoom + tx, (selBounds.top + moveDy) * zoom + ty,
-            (selBounds.right + moveDx) * zoom + tx, (selBounds.bottom + moveDy) * zoom + ty,
+            selBounds.left * zoom + tx, selBounds.top * zoom + ty,
+            selBounds.right * zoom + tx, selBounds.bottom * zoom + ty,
         )
         return out
     }
 
     private fun startMove(e: MotionEvent, i: Int) = beginMove(e.getPointerId(i), e.getX(i), e.getY(i))
+
+    /** Rotating pages isn't supported (they stay axis-aligned), so the handle only shows for ink. */
+    private val canRotate get() = selPages.isEmpty()
+
+    /** Which handle (0-3 corner, 4 rotate) is under screen point (x, y), or -1. */
+    private fun handleAt(x: Float, y: Float): Int {
+        val r = HANDLE_HIT_DP * density
+        if (!rotateHandle.x.isNaN() && hypot(x - rotateHandle.x, y - rotateHandle.y) <= r) return 4
+        for (k in 0 until 4) if (hypot(x - cornerHandles[k * 2], y - cornerHandles[k * 2 + 1]) <= r) return k
+        return -1
+    }
+
+    /** Starts resizing from corner [corner] (0 TL, 1 TR, 2 BR, 3 BL) or rotating ([corner] 4). */
+    private fun beginHandleDrag(corner: Int, pointerId: Int, x: Float, y: Float) {
+        val wx = (x - tx) / zoom; val wy = (y - ty) / zoom
+        if (corner == 4) {
+            xform = Xform.ROTATE
+            pivotX = selBounds.centerX(); pivotY = selBounds.centerY()
+            startAngle = Math.toDegrees(atan2((wy - pivotY).toDouble(), (wx - pivotX).toDouble())).toFloat()
+            liveAngle = 0f
+        } else {
+            xform = Xform.SCALE
+            // Anchor the opposite corner; the grabbed one follows the finger.
+            pivotX = if (corner == 0 || corner == 3) selBounds.right else selBounds.left
+            pivotY = if (corner == 0 || corner == 1) selBounds.bottom else selBounds.top
+            startDist = max(1e-3f, hypot(wx - pivotX, wy - pivotY))
+        }
+        handleCorner = corner
+        liftSelection(pointerId, x, y)
+    }
 
     /** Ink whose center lies on one of [pgs]: annotations travel with their page. */
     private fun strokesOnPages(pgs: Collection<PdfPageItem>, exclude: Collection<Stroke>): List<Stroke> {
@@ -412,9 +539,15 @@ class InfiniteCanvasView @JvmOverloads constructor(
     }
 
     private fun beginMove(pointerId: Int, x: Float, y: Float) {
+        xform = Xform.MOVE
+        handleCorner = -1
+        liftSelection(pointerId, x, y)
+    }
+
+    private fun liftSelection(pointerId: Int, x: Float, y: Float) {
         activePointer = pointerId
         moveStartX = x; moveStartY = y
-        moveDx = 0f; moveDy = 0f
+        liveMatrix.reset()
         mode = Mode.MOVE
         // Lift the selected ink out of the tiles into one floating display list.
         for (s in selStrokes) tiles.remove(s)
@@ -442,25 +575,53 @@ class InfiniteCanvasView @JvmOverloads constructor(
     private fun updateMove(e: MotionEvent) {
         val i = e.findPointerIndex(activePointer)
         if (i < 0) return
-        moveDx = (e.getX(i) - moveStartX) / zoom
-        moveDy = (e.getY(i) - moveStartY) / zoom
+        val x = e.getX(i); val y = e.getY(i)
+        val wx = (x - tx) / zoom; val wy = (y - ty) / zoom
+        when (xform) {
+            Xform.MOVE -> liveMatrix.setTranslate((x - moveStartX) / zoom, (y - moveStartY) / zoom)
+            Xform.SCALE -> {
+                val s = (hypot(wx - pivotX, wy - pivotY) / startDist).coerceIn(MIN_SCALE, MAX_SCALE)
+                liveMatrix.setScale(s, s, pivotX, pivotY)
+            }
+            Xform.ROTATE -> {
+                var a = Math.toDegrees(atan2((wy - pivotY).toDouble(), (wx - pivotX).toDouble())).toFloat() - startAngle
+                a = ((a % 360f) + 540f) % 360f - 180f // -180..180
+                // Snap to multiples of 45° when close, so straightening ink is easy.
+                val snap = Math.round(a / 45f) * 45f
+                if (abs(a - snap) < ROTATE_SNAP_DEG) a = snap
+                liveAngle = a
+                liveMatrix.setRotate(a, pivotX, pivotY)
+            }
+        }
         invalidate()
+    }
+
+    /** True if [liveMatrix] would change nothing visible (a tap, or a drag back to the start). */
+    private fun liveMatrixIsNoop(): Boolean {
+        val v = FloatArray(9)
+        liveMatrix.getValues(v)
+        val sizePx = max(selBounds.width(), selBounds.height()) * zoom
+        val linear = abs(v[Matrix.MSCALE_X] - 1f) + abs(v[Matrix.MSKEW_X]) + abs(v[Matrix.MSKEW_Y]) + abs(v[Matrix.MSCALE_Y] - 1f)
+        return linear * sizePx < 1f && abs(v[Matrix.MTRANS_X]) * zoom < 1f && abs(v[Matrix.MTRANS_Y]) * zoom < 1f
     }
 
     private fun commitMove(cancel: Boolean = false) {
         if (mode != Mode.MOVE) return
         mode = Mode.NONE
         activePointer = -1
-        val dx = moveDx; val dy = moveDy
-        moveDx = 0f; moveDy = 0f
+        handleCorner = -1
         floatingNode.discardDisplayList()
-        if (cancel || (abs(dx) * zoom < 1f && abs(dy) * zoom < 1f)) {
+        if (cancel || liveMatrixIsNoop()) {
+            liveMatrix.reset()
             for (s in selStrokes) tiles.add(s) // put back unchanged
             invalidate()
             return
         }
-        val newStrokes = selStrokes.map { it.translated(dx, dy) }
-        val newPages = selPages.map { it.translated(dx, dy) }
+        val m = Matrix(liveMatrix)
+        liveMatrix.reset()
+        val widthScale = m.mapRadius(1f)
+        val newStrokes = selStrokes.map { it.transformed(m, widthScale) }
+        val newPages = selPages.map { it.transformed(m) }
         // Old strokes are already out of the tiles; apply() removing them again is a no-op.
         apply(Edit.Move(ArrayList(selStrokes), newStrokes, ArrayList(selPages), newPages), record = true)
         setSelection(newStrokes, newPages)
@@ -502,7 +663,18 @@ class InfiniteCanvasView @JvmOverloads constructor(
         if (hypot(lastX - downX, lastY - downY) > touchSlop) return
         val wx = (downX - tx) / zoom
         val wy = (downY - ty) / zoom
-        val page = pages.lastOrNull { it.bounds.contains(wx, wy) } ?: return
+        val page = pages.lastOrNull { it.bounds.contains(wx, wy) }
+        if (page == null) {
+            // On empty canvas, a long-press offers to paste what was copied.
+            if (clip == null || mode != Mode.GESTURE) return
+            pasteX = wx; pasteY = wy
+            val w = 84f * density; val h = 36f * density
+            pasteChip.set(downX - w / 2, downY - h - 16f * density, downX + w / 2, downY - 16f * density)
+            if (pasteChip.top < topInset) pasteChip.offset(0f, h + 32f * density)
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            invalidate()
+            return
+        }
         // It was a long-press, not ink or a lasso: discard what was started.
         liveCount = 0; lassoCount = 0
         setSelection(strokesOnPages(listOf(page), emptyList()), listOf(page))
@@ -612,7 +784,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
                     Mode.DRAW, Mode.ERASE -> if (canceled) cancelInk() else finishInk(e)
                     Mode.LASSO -> if (canceled) cancelInk() else finishLasso()
                     Mode.MOVE -> commitMove(cancel = canceled)
-                    Mode.CHIP -> if (chipRect.contains(e.x, e.y)) deleteSelection()
+                    Mode.CHIP -> { mode = Mode.NONE; onChipTapped(e.x, e.y) }
                     Mode.GESTURE -> {
                         // A tap (no real movement) outside the selection deselects.
                         if (hasSelection && hypot(e.x - downX, e.y - downY) <= touchSlop) clearSelection()
@@ -639,8 +811,16 @@ class InfiniteCanvasView @JvmOverloads constructor(
         val pen = isPen(e, 0)
         val eraserIntent = pen && wantsEraser(e, 0)
 
+        if (!pasteChip.isEmpty) {
+            if (pasteChip.contains(x, y)) { pressedChip = CHIP_PASTE; mode = Mode.CHIP; return }
+            pasteChip.setEmpty(); invalidate()
+        }
+
         if (hasSelection && !eraserIntent) {
-            if (chipRect.contains(x, y)) { mode = Mode.CHIP; return }
+            val chip = chipRects.indexOfFirst { it.contains(x, y) }
+            if (chip >= 0) { pressedChip = chip; mode = Mode.CHIP; return }
+            val handle = handleAt(x, y)
+            if (handle >= 0) { beginHandleDrag(handle, e.getPointerId(0), x, y); return }
             val r = selectionScreenRect(tmpRect)
             r.inset(-touchSlop, -touchSlop)
             if (r.contains(x, y)) { startMove(e, 0); return }
@@ -649,8 +829,26 @@ class InfiniteCanvasView @JvmOverloads constructor(
 
         if (pen || fingerDraws) startInk(e, 0) else startGesture(e)
 
-        // Long-press picks up a PDF page: with a finger always; with the pen only in lasso mode.
+        // Long-press picks up a PDF page (or offers to paste): with a finger always; with the pen
+        // only in lasso mode.
         if (!pen || tool == Tool.LASSO) postDelayed(longPress, longPressMs)
+    }
+
+    private fun onChipTapped(x: Float, y: Float) {
+        val chip = pressedChip
+        pressedChip = -1
+        if (chip == CHIP_PASTE) {
+            val hit = pasteChip.contains(x, y)
+            pasteChip.setEmpty(); invalidate()
+            if (hit) paste(pasteX, pasteY)
+            return
+        }
+        if (chip < 0 || !chipRects[chip].contains(x, y)) return
+        when (CHIP_ACTIONS[chip]) {
+            com.avonotes.R.string.copy -> copySelection()
+            com.avonotes.R.string.duplicate -> duplicateSelection()
+            com.avonotes.R.string.delete -> deleteSelection()
+        }
     }
 
     private fun isPen(e: MotionEvent, i: Int): Boolean {
@@ -899,10 +1097,11 @@ class InfiniteCanvasView @JvmOverloads constructor(
         canvas.scale(zoom, zoom)
         tiles.draw(canvas, visible)
         if (mode == Mode.MOVE && selStrokes.isNotEmpty()) {
-            canvas.translate(moveDx, moveDy)
+            canvas.save()
+            canvas.concat(liveMatrix)
             if (canvas.isHardwareAccelerated && floatingNode.hasDisplayList()) canvas.drawRenderNode(floatingNode)
             else for (s in selStrokes) renderer.draw(canvas, s.tool, s.color, s.width, s.points, s.pointCount)
-            canvas.translate(-moveDx, -moveDy)
+            canvas.restore()
         }
         if (mode == Mode.DRAW && liveCount > 0) {
             renderer.draw(canvas, liveTool, liveColor, liveWidth, livePts, liveCount)
@@ -911,7 +1110,14 @@ class InfiniteCanvasView @JvmOverloads constructor(
 
         if (mode == Mode.LASSO && lassoCount > 1) drawLasso(canvas)
         if (hasSelection) drawSelection(canvas)
+        if (!pasteChip.isEmpty) drawChip(canvas, pasteChip, context.getString(com.avonotes.R.string.paste))
         if (mode == Mode.ERASE && !eraserX.isNaN()) canvas.drawCircle(eraserX, eraserY, eraserRadiusPx, cursorPaint)
+    }
+
+    private fun drawChip(canvas: Canvas, r: RectF, label: String) {
+        canvas.drawRoundRect(r, r.height() / 2, r.height() / 2, chipPaint)
+        val ty0 = r.centerY() - (chipText.descent() + chipText.ascent()) / 2
+        canvas.drawText(label, r.centerX(), ty0, chipText)
     }
 
     private fun drawLasso(canvas: Canvas) {
@@ -922,34 +1128,93 @@ class InfiniteCanvasView @JvmOverloads constructor(
     }
 
     private fun drawSelection(canvas: Canvas) {
-        val r = selectionScreenRect(tmpRect)
         val pad = 6f * density
+        if (mode == Mode.MOVE) {
+            // The box follows the live transform (it may be rotated).
+            val b = RectF(selBounds)
+            val p = pad / zoom
+            b.inset(-p, -p)
+            val pts = floatArrayOf(b.left, b.top, b.right, b.top, b.right, b.bottom, b.left, b.bottom)
+            liveMatrix.mapPoints(pts)
+            lassoPath.rewind()
+            for (k in 0 until 4) {
+                val sx = pts[k * 2] * zoom + tx; val sy = pts[k * 2 + 1] * zoom + ty
+                if (k == 0) lassoPath.moveTo(sx, sy) else lassoPath.lineTo(sx, sy)
+            }
+            lassoPath.close()
+            canvas.drawPath(lassoPath, selFill)
+            canvas.drawPath(lassoPath, dashPaint)
+            for (c in chipRects) c.setEmpty()
+            if (xform == Xform.ROTATE) {
+                // Angle readout next to the finger.
+                val label = "${Math.round(liveAngle)}°"
+                val w = chipText.measureText(label) + 24f * density
+                val h = 30f * density
+                tmpRect.set(lastX + 20f * density, lastY - h - 20f * density, lastX + 20f * density + w, lastY - 20f * density)
+                drawChip(canvas, tmpRect, label)
+            }
+            return
+        }
+
+        val r = selectionScreenRect(tmpRect)
         r.inset(-pad, -pad)
         canvas.drawRect(r, selFill)
         canvas.drawRect(r, dashPaint)
-        if (mode == Mode.MOVE) { chipRect.setEmpty(); return }
-        // "Delete" chip above the selection (or below if that would be off screen).
-        val w = 76f * density; val h = 32f * density; val gap = 8f * density
-        var top = r.top - gap - h
-        if (top < topInset + gap) top = r.bottom + gap
-        val left = (r.right - w).coerceIn(gap, max(gap, width - w - gap))
-        chipRect.set(left, top, left + w, top + h)
-        canvas.drawRoundRect(chipRect, h / 2, h / 2, chipPaint)
-        val ty0 = chipRect.centerY() - (chipText.descent() + chipText.ascent()) / 2
-        canvas.drawText(context.getString(com.avonotes.R.string.delete), chipRect.centerX(), ty0, chipText)
+
+        // Corner handles (resize) and, for ink, a rotate handle above the top edge.
+        val corners = floatArrayOf(r.left, r.top, r.right, r.top, r.right, r.bottom, r.left, r.bottom)
+        corners.copyInto(cornerHandles)
+        val hr = HANDLE_DP * density
+        if (canRotate) {
+            val stem = 28f * density
+            var hy = r.top - stem
+            if (hy < topInset + hr) hy = r.bottom + stem // no room above: put it below
+            rotateHandle.set(r.centerX(), hy)
+            canvas.drawLine(r.centerX(), if (hy < r.top) r.top else r.bottom, r.centerX(), hy, dashPaint)
+            canvas.drawCircle(rotateHandle.x, rotateHandle.y, hr * 1.15f, handleFill)
+            canvas.drawCircle(rotateHandle.x, rotateHandle.y, hr * 1.15f, handleStroke)
+            // A small curved arrow inside the rotate handle.
+            val ar = hr * 0.55f
+            tmpRect2.set(rotateHandle.x - ar, rotateHandle.y - ar, rotateHandle.x + ar, rotateHandle.y + ar)
+            canvas.drawArc(tmpRect2, -60f, 270f, false, handleStroke)
+        } else rotateHandle.set(Float.NaN, Float.NaN)
+        for (k in 0 until 4) {
+            canvas.drawCircle(corners[k * 2], corners[k * 2 + 1], hr, handleFill)
+            canvas.drawCircle(corners[k * 2], corners[k * 2 + 1], hr, handleStroke)
+        }
+
+        // Action chips under the selection (or above it if there's no room below).
+        val h = 36f * density; val gap = 8f * density; val space = 6f * density
+        val labels = CHIP_ACTIONS.map { context.getString(it) }
+        val widths = labels.map { chipText.measureText(it) + 28f * density }
+        val total = widths.sum() + space * (labels.size - 1)
+        // Keep clear of the rotate handle on whichever side it is.
+        val rotBelow = !rotateHandle.y.isNaN() && rotateHandle.y > r.bottom
+        val rotAbove = !rotateHandle.y.isNaN() && rotateHandle.y < r.top
+        var top = if (rotBelow) rotateHandle.y + hr * 1.15f + gap else r.bottom + gap + hr
+        if (top + h > height - gap) {
+            top = if (rotAbove) rotateHandle.y - hr * 1.15f - gap - h else r.top - gap - hr - h
+        }
+        top = top.coerceIn(topInset + gap, max(topInset + gap, height - h - gap))
+        var left = (r.centerX() - total / 2).coerceIn(gap, max(gap, width - total - gap))
+        for (k in labels.indices) {
+            chipRects[k].set(left, top, left + widths[k], top + h)
+            drawChip(canvas, chipRects[k], labels[k])
+            left += widths[k] + space
+        }
     }
 
     private fun drawPages(canvas: Canvas) {
         val cache = pdfCache ?: return
         cache.beginFrame()
         val moving = mode == Mode.MOVE && selPages.isNotEmpty()
+        val box = RectF()
         for (p in pages) {
             val lifted = moving && p in selPages
-            val ox = if (lifted) moveDx else 0f
-            val oy = if (lifted) moveDy else 0f
-            val l = p.x + ox; val t = p.y + oy
-            if (l > visible.right || l + p.w < visible.left || t > visible.bottom || t + p.h < visible.top) continue
-            val pageRect = RectF(l * zoom + tx, t * zoom + ty, (l + p.w) * zoom + tx, (t + p.h) * zoom + ty)
+            box.set(p.bounds)
+            if (lifted) liveMatrix.mapRect(box)
+            if (!RectF.intersects(box, visible)) continue
+            val pageRect = RectF(box.left * zoom + tx, box.top * zoom + ty, box.right * zoom + tx, box.bottom * zoom + ty)
             canvas.drawRect(pageRect, pageFill)
             val bmp = cache.bitmapFor(p, zoom)
             if (bmp != null) canvas.drawBitmap(bmp, null, pageRect, bmpPaint)
@@ -1042,6 +1307,21 @@ class InfiniteCanvasView @JvmOverloads constructor(
         private const val PATCH_DELAY_MS = 180L
         private const val LASSO_FRACTION = 0.5f
         const val DEFAULT_ERASER_SIZE = 14f
+
+        // Selection handles and chips.
+        private const val HANDLE_DP = 9f
+        private const val HANDLE_HIT_DP = 24f
+        private const val MIN_SCALE = 0.05f
+        private const val MAX_SCALE = 20f
+        private const val ROTATE_SNAP_DEG = 4f
+        private const val DUPLICATE_OFFSET_DP = 24f
+        private val CHIP_ACTIONS = intArrayOf(
+            com.avonotes.R.string.copy, com.avonotes.R.string.duplicate, com.avonotes.R.string.delete,
+        )
+        private const val CHIP_PASTE = 100
+
+        /** The in-app clipboard, shared by every note opened in this app session. */
+        private var clip: Clip? = null
         private const val ACCENT = 0xFF2E7D32.toInt()
     }
 }

@@ -200,6 +200,10 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         if (autoSave) main.postDelayed(autosave, AUTOSAVE_DELAY_MS)
     }
 
+    override fun onMessage(textRes: Int) {
+        Toast.makeText(this, textRes, Toast.LENGTH_SHORT).show()
+    }
+
     override fun onHistoryChanged(canUndo: Boolean, canRedo: Boolean) {
         btnUndo.isEnabled = canUndo; btnUndo.alpha = if (canUndo) 1f else 0.35f
         btnRedo.isEnabled = canRedo; btnRedo.alpha = if (canRedo) 1f else 0.35f
@@ -484,6 +488,10 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_Z -> { if (event.isShiftPressed) canvasView.redo() else canvasView.undo(); return true }
                 KeyEvent.KEYCODE_Y -> { canvasView.redo(); return true }
+                KeyEvent.KEYCODE_C -> { canvasView.copySelection(); return true }
+                KeyEvent.KEYCODE_X -> { if (canvasView.copySelection()) canvasView.deleteSelection(); return true }
+                KeyEvent.KEYCODE_V -> { canvasView.paste(); return true }
+                KeyEvent.KEYCODE_D -> { canvasView.duplicateSelection(); return true }
             }
         }
         return super.dispatchKeyEvent(event)

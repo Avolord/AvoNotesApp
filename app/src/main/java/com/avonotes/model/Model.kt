@@ -1,5 +1,6 @@
 package com.avonotes.model
 
+import android.graphics.Matrix
 import android.graphics.RectF
 import kotlin.math.hypot
 import kotlin.math.sqrt
@@ -71,6 +72,21 @@ class Stroke(
         var i = 0
         while (i < p.size) { p[i] += dx; p[i + 1] += dy; i += 3 }
         return Stroke(tool, color, width, p).also { it.seq = seq }
+    }
+
+    /**
+     * A copy with every point mapped through [m] (scale, rotation, translation). The width
+     * scales with it ([widthScale], usually `m.mapRadius(1f)`), so the ink looks the same, only
+     * bigger or smaller. Pressure is kept. The copy keeps z-order.
+     */
+    fun transformed(m: Matrix, widthScale: Float): Stroke {
+        val n = pointCount
+        val xy = FloatArray(n * 2)
+        for (i in 0 until n) { xy[i * 2] = points[i * 3]; xy[i * 2 + 1] = points[i * 3 + 1] }
+        m.mapPoints(xy)
+        val p = points.copyOf()
+        for (i in 0 until n) { p[i * 3] = xy[i * 2]; p[i * 3 + 1] = xy[i * 2 + 1] }
+        return Stroke(tool, color, width * widthScale, p).also { it.seq = seq }
     }
 
     /** Fraction of this stroke's points inside [poly] (packed x, y pairs; [n] vertices). */
@@ -228,6 +244,13 @@ class PdfPageItem(
     val bounds = RectF(x, y, x + w, y + h)
 
     fun translated(dx: Float, dy: Float) = PdfPageItem(docId, pageIndex, x + dx, y + dy, w, h)
+
+    /** The page's box mapped through [m] (pages only move and scale; they don't rotate). */
+    fun transformed(m: Matrix): PdfPageItem {
+        val r = RectF(bounds)
+        m.mapRect(r)
+        return PdfPageItem(docId, pageIndex, r.left, r.top, r.width(), r.height())
+    }
 }
 
 /** Everything persisted for a note. */

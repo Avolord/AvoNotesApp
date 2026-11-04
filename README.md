@@ -24,7 +24,7 @@ the app asks for **zero permissions** and never touches the network.
 | --- | --- |
 | ![PDF annotation](docs/screenshots/pdf-annotation.png) | **Annotate PDFs.** Import a PDF and its pages land on the canvas; write, highlight and sketch around them. Pages render in the background and get sharp again at any zoom. |
 | ![Brushes](docs/screenshots/brushes.png) | **Brushes.** Pressure-sensitive **Pen**, calligraphic **Fountain** pen, **Pencil** (pressure sets darkness), even **Marker**, plus a **Highlighter**. Pick one with a live preview in your current color. |
-| ![Lasso](docs/screenshots/lasso.png) | **Lasso, move, delete.** Loop around ink to select it, drag to move it, tap Delete to remove it. Long-press a PDF page to move it together with its annotations. Everything is undoable. |
+| ![Lasso](docs/screenshots/lasso.png) | **Lasso and edit.** Loop around ink to select it, then drag to move it, pull a corner to resize it, or use the round handle to rotate it. Copy, paste (even into another note), duplicate or delete it. Long-press a PDF page to move or resize it together with its annotations. Everything is undoable. |
 | ![Dark mode](docs/screenshots/pdf-dark.png) | **Dark mode.** The whole app, including the canvas: PDF pages and ink are shown with inverted lightness (hues kept), so annotations stay readable. Your notes are stored unchanged. |
 | ![Dark library](docs/screenshots/library-dark.png) | **Organized library.** Groups, search across everything, sort by recent or A–Z, and previews of every note. |
 
@@ -38,7 +38,8 @@ More:
 - **Saving your way:** auto-save (default) or manual save with an unsaved-changes prompt.
 - **Your files, your device:** notes live in the app's storage; export any note as an `.avonote`
   file (a zip with the ink and its PDFs) and import it anywhere.
-- Keyboard and mouse support: Ctrl+Z / Ctrl+Y, Del, mouse-wheel pan, Ctrl+wheel zoom.
+- Keyboard and mouse support: Ctrl+Z / Ctrl+Y, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+D (duplicate), Del,
+  mouse-wheel pan, Ctrl+wheel zoom.
 
 ## Install
 
@@ -101,8 +102,15 @@ Add `https://github.com/Avolord/AvoNotesApp` to [Obtainium](https://github.com/I
 - Tap the active pen or highlighter again (or long-press it) for brush, color and width. The pen icon
   shows the current ink color; the marker shows it as a swatch.
 - **Lasso:** draw a loop around ink to select it (a stroke counts if at least half of it is inside;
-  PDF pages count if fully inside). Drag inside the selection to move it. Tap **Delete** (or press Del)
-  to delete it. Tap outside to deselect.
+  PDF pages count if fully inside). Then:
+  - drag inside the selection to move it;
+  - drag a **corner handle** to resize it (the opposite corner stays put; lines get thicker or
+    thinner with it);
+  - drag the **round handle** to rotate it (it snaps to 45° steps; pages can't be rotated);
+  - **Copy**, **Duplicate** or **Delete** with the buttons under it. To paste, long-press empty space
+    (with a finger) and tap **Paste**. Copied ink can be pasted into other notes too; PDF pages only
+    into the note they came from.
+  - Tap outside to deselect.
 - **Long-press a PDF page** with a finger (or the pen in lasso mode) to pick it up and move it; its ink
   comes along. Deleting a page keeps the handwriting that was on it.
 - **More** panel: zoom to fit or 100%; rename the note and pick its background; and the settings
@@ -190,7 +198,8 @@ files/groups.tsv                   group id <TAB> name
 
 ## Known limits and ideas
 
-- Selections can be moved and deleted, but not yet resized, rotated, copied or recolored.
+- Selections can't be recolored, and PDF pages can't be rotated.
+- The clipboard is in-app only and is cleared when the app is closed.
 - Groups are one level deep, and exporting a note doesn't include its group.
 - No export to PDF yet.
 - Zoomed far out on very large notes, a bitmap level of detail would help performance.
