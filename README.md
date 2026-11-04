@@ -10,6 +10,7 @@
 ![Android 11+](https://img.shields.io/badge/Android-11%2B-3ddc84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7f52ff?logo=kotlin&logoColor=white)
 ![No dependencies](https://img.shields.io/badge/dependencies-none-2e7d32)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 A small, fast, native Android note-taking app for stylus users: an **infinite canvas**, **PDF
 annotation**, and plain **save/load**. No accounts, no cloud, no ads, no subscriptions, no tracking:
@@ -192,4 +193,4 @@ files/groups.tsv                   group id <TAB> name
 
 ## License
 
-No license has been chosen yet, so all rights are reserved for now.
+[MIT](LICENSE): use, modify and redistribute it freely, as long as the copyright notice comes along.
