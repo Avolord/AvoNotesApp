@@ -2,8 +2,15 @@ package com.avonotes.model
 
 import android.graphics.RectF
 
+/**
+ * Toolbar tools, and also the kind of a stored stroke (PEN, HIGHLIGHTER and the
+ * brushes FOUNTAIN, PENCIL, MARKER). The code is what the note file stores.
+ */
 enum class Tool(val code: Int) {
-    PEN(0), HIGHLIGHTER(1), ERASER(2), LASSO(3);
+    PEN(0), HIGHLIGHTER(1), ERASER(2), LASSO(3),
+    FOUNTAIN(4), PENCIL(5), MARKER(6);
+
+    val isBrush get() = this == PEN || this == FOUNTAIN || this == PENCIL || this == MARKER
 
     companion object {
         fun fromCode(c: Int) = entries.firstOrNull { it.code == c } ?: PEN

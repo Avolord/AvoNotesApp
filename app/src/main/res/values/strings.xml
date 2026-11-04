@@ -15,6 +15,10 @@
     <string name="cancel">Cancel</string>
     <string name="ok">OK</string>
     <string name="pen">Pen</string>
+    <string name="brush_pen">Pen</string>
+    <string name="brush_fountain">Fountain</string>
+    <string name="brush_pencil">Pencil</string>
+    <string name="brush_marker">Marker</string>
     <string name="highlighter">Highlighter</string>
     <string name="eraser">Eraser</string>
     <string name="lasso">Lasso select</string>

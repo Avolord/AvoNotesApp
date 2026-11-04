@@ -57,6 +57,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
             field = v
             if (v != Tool.LASSO) clearSelection()
         }
+    /** Which brush the pen tool draws with: PEN, FOUNTAIN, PENCIL or MARKER. */
+    var penBrush = Tool.PEN
     var penColor = Color.BLACK
     var penWidth = 2.5f
     var highlighterColor = 0x66FFEB3B
@@ -659,7 +661,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
             addLassoPoint(x, y)
         } else {
             mode = Mode.DRAW
-            liveTool = tool
+            liveTool = if (tool == Tool.HIGHLIGHTER) Tool.HIGHLIGHTER else penBrush
             liveColor = if (tool == Tool.HIGHLIGHTER) highlighterColor else penColor
             liveWidth = if (tool == Tool.HIGHLIGHTER) highlighterWidth else penWidth
             liveCount = 0

@@ -287,6 +287,54 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         popup.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         popup.elevation = 8 * d
 
+        // Brush picker (pen tool only): a live sample of each brush in the current color.
+        val previews = ArrayList<BrushPreviewView>()
+        if (!hl) {
+            val brushRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 0, 0, (10 * d).toInt())
+            }
+            fun styleChip(v: View, selected: Boolean) {
+                v.background = GradientDrawable().apply {
+                    cornerRadius = 10 * d
+                    setColor(if (selected) getColor(R.color.tool_selected_bg) else Color.TRANSPARENT)
+                    setStroke(d.toInt().coerceAtLeast(1), getColor(R.color.popup_border))
+                }
+            }
+            val chips = ArrayList<View>()
+            for (b in BRUSHES) {
+                val chip = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    setPadding((4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt(), (6 * d).toInt())
+                    layoutParams = LinearLayout.LayoutParams((72 * d).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        marginEnd = (6 * d).toInt()
+                    }
+                    contentDescription = getString(brushName(b))
+                }
+                val preview = BrushPreviewView(this).apply {
+                    brush = b
+                    dark = canvasView.dark
+                    color = canvasView.penColor
+                }
+                previews.add(preview)
+                chip.addView(preview, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (40 * d).toInt()))
+                chip.addView(TextView(this).apply {
+                    setText(brushName(b)); textSize = 12f; gravity = Gravity.CENTER
+                    setTextColor(getColor(R.color.icon))
+                })
+                styleChip(chip, b == canvasView.penBrush)
+                chip.setOnClickListener {
+                    canvasView.penBrush = b
+                    for ((k, c) in chips.withIndex()) styleChip(c, BRUSHES[k] == b)
+                    saveSettings()
+                }
+                chips.add(chip)
+                brushRow.addView(chip)
+            }
+            box.addView(brushRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         for (c in if (hl) HIGHLIGHTER_COLORS else PEN_COLORS) {
             val size = (34 * d).toInt()
@@ -392,6 +440,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
     private fun loadSettings() {
         canvasView.tool = Tool.fromCode(prefs.getInt("tool", 0))
         canvasView.penColor = prefs.getInt("penColor", PEN_COLORS[0])
+        canvasView.penBrush = Tool.fromCode(prefs.getInt("penBrush", Tool.PEN.code)).takeIf { it.isBrush } ?: Tool.PEN
         canvasView.penWidth = prefs.getFloat("penWidth", 2.5f)
         canvasView.highlighterColor = prefs.getInt("hlColor", HIGHLIGHTER_COLORS[0])
         canvasView.highlighterWidth = prefs.getFloat("hlWidth", 18f)
@@ -404,6 +453,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         prefs.edit()
             .putInt("tool", canvasView.tool.code)
             .putInt("penColor", canvasView.penColor)
+            .putInt("penBrush", canvasView.penBrush.code)
             .putFloat("penWidth", canvasView.penWidth)
             .putInt("hlColor", canvasView.highlighterColor)
             .putFloat("hlWidth", canvasView.highlighterWidth)
@@ -464,6 +514,15 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             0xFF1A1A1A.toInt(), 0xFF5F6368.toInt(), 0xFF1565C0.toInt(), 0xFFC62828.toInt(),
             0xFF2E7D32.toInt(), 0xFF6A1B9A.toInt(), 0xFFEF6C00.toInt(),
         )
+        private val BRUSHES = arrayOf(Tool.PEN, Tool.FOUNTAIN, Tool.PENCIL, Tool.MARKER)
+
+        private fun brushName(t: Tool) = when (t) {
+            Tool.FOUNTAIN -> R.string.brush_fountain
+            Tool.PENCIL -> R.string.brush_pencil
+            Tool.MARKER -> R.string.brush_marker
+            else -> R.string.brush_pen
+        }
+
         private val HIGHLIGHTER_COLORS = intArrayOf(
             0x66FFEB3B, 0x6676FF03, 0x66FF80AB, 0x6640C4FF, 0x66FFAB40,
         )
