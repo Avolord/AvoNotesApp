@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 108dp adaptive foreground; artwork kept inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- avocado half -->
+    <path android:fillColor="#3E7B32"
+        android:pathData="M54,26c-9,0 -14,9 -16,18c-2,9 -6,13 -6,22c0,12 10,20 22,20s22,-8 22,-20c0,-9 -4,-13 -6,-22c-2,-9 -7,-18 -16,-18z" />
+    <path android:fillColor="#D9E8A4"
+        android:pathData="M54,31c-6.5,0 -10.5,7 -12,15c-1.8,8 -5,11.5 -5,19.5c0,9.5 7.8,15.5 17,15.5s17,-6 17,-15.5c0,-8 -3.2,-11.5 -5,-19.5c-1.5,-8 -5.5,-15 -12,-15z" />
+    <!-- pit as an ink stroke -->
+    <path android:strokeColor="#2B2B2B" android:strokeWidth="4" android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M45,68c4,-8 8,-10 10,-6s4,6 9,-2" />
+</vector>

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/paper">
+
+    <com.avonotes.canvas.InfiniteCanvasView
+        android:id="@+id/canvas"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/toolbar_bg"
+        android:elevation="2dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <ImageButton android:id="@+id/btn_back" style="@style/ToolButton"
+            android:contentDescription="@string/back" android:src="@drawable/ic_back" />
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:paddingStart="4dp"
+            android:paddingEnd="8dp"
+            android:textColor="@color/icon"
+            android:textSize="16sp" />
+
+        <ImageButton android:id="@+id/btn_pen" style="@style/ToolButton"
+            android:contentDescription="@string/pen" android:src="@drawable/ic_pen" />
+        <ImageButton android:id="@+id/btn_highlighter" style="@style/ToolButton"
+            android:contentDescription="@string/highlighter" android:src="@drawable/ic_highlighter" />
+        <ImageButton android:id="@+id/btn_eraser" style="@style/ToolButton"
+            android:contentDescription="@string/eraser" android:src="@drawable/ic_eraser" />
+        <ImageButton android:id="@+id/btn_lasso" style="@style/ToolButton"
+            android:contentDescription="@string/lasso" android:src="@drawable/ic_lasso" />
+
+        <View
+            android:id="@+id/btn_color"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:contentDescription="@string/color_and_width" />
+
+        <View android:layout_width="1dp" android:layout_height="24dp"
+            android:layout_marginStart="4dp" android:layout_marginEnd="4dp"
+            android:background="@color/toolbar_divider" />
+
+        <ImageButton android:id="@+id/btn_undo" style="@style/ToolButton"
+            android:contentDescription="@string/undo" android:src="@drawable/ic_undo" />
+        <ImageButton android:id="@+id/btn_redo" style="@style/ToolButton"
+            android:contentDescription="@string/redo" android:src="@drawable/ic_redo" />
+        <ImageButton android:id="@+id/btn_pdf" style="@style/ToolButton"
+            android:contentDescription="@string/import_pdf" android:src="@drawable/ic_pdf" />
+        <ImageButton android:id="@+id/btn_more" style="@style/ToolButton"
+            android:contentDescription="@string/more" android:src="@drawable/ic_more" />
+    </LinearLayout>
+</FrameLayout>

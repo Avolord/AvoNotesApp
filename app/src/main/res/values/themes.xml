@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="accent">#2E7D32</color>
+    <color name="toolbar_bg">#F7F7F5</color>
+    <color name="toolbar_divider">#E2E2DE</color>
+    <color name="icon">#2B2B2B</color>
+    <color name="tool_selected_bg">#DCEBDD</color>
+    <color name="paper">#FCFCFA</color>
+    <color name="text_secondary">#6B6B66</color>
+
+    <style name="Theme.AvoNotes" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorPrimary">@color/accent</item>
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <style name="ToolButton">
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:background">@drawable/tool_bg</item>
+        <item name="android:tint">@color/icon</item>
+    </style>
+</resources>

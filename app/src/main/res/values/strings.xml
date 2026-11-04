@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AvoNotes</string>
+    <string name="new_note">New note</string>
+    <string name="import_note">Import</string>
+    <string name="untitled">Untitled</string>
+    <string name="empty_library">No notes yet. Tap “New note” to start.</string>
+    <string name="rename">Rename</string>
+    <string name="export">Export…</string>
+    <string name="delete">Delete</string>
+    <string name="delete_confirm">Delete “%1$s”? This cannot be undone.</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="pen">Pen</string>
+    <string name="highlighter">Highlighter</string>
+    <string name="eraser">Eraser</string>
+    <string name="lasso">Lasso select</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+    <string name="import_pdf">Import PDF</string>
+    <string name="more">More</string>
+    <string name="back">Back</string>
+    <string name="color_and_width">Color and width</string>
+    <string name="finger_draws">Finger draws</string>
+    <string name="show_grid">Show dot grid</string>
+    <string name="fit_content">Zoom to fit</string>
+    <string name="reset_zoom">Reset zoom (100%)</string>
+    <string name="importing_pdf">Importing PDF…</string>
+    <string name="pdf_failed">Could not open that PDF (it may be encrypted or damaged).</string>
+    <string name="import_failed">Could not import that file.</string>
+    <string name="export_failed">Export failed.</string>
+    <string name="exported">Exported.</string>
+    <string name="load_failed">This note could not be loaded.</string>
+    <string name="width">Width</string>
+</resources>
