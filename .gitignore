@@ -6,6 +6,14 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+*.p12
+# fdroidserver output (built in CI)
+fdroid/config.yml
+fdroid/repo/
+fdroid/archive/
+fdroid/tmp/
+fdroid/stats/
+_site/
 .idea/
 *.iml
 .kotlin/

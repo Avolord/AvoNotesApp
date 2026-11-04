@@ -1,0 +1,26 @@
+Categories:
+  - Writing
+AuthorName: Avolord
+WebSite: https://github.com/Avolord/AvoNotesApp
+SourceCode: https://github.com/Avolord/AvoNotesApp
+IssueTracker: https://github.com/Avolord/AvoNotesApp/issues
+Changelog: https://github.com/Avolord/AvoNotesApp/releases
+
+Name: AvoNotes
+Summary: Infinite-canvas handwritten notes with PDF annotation
+Description: |-
+  AvoNotes is a small, fast, native note-taking app for stylus users.
+
+  * Infinite canvas with smooth pan and pinch-zoom, palm rejection and S Pen button / eraser support
+  * Brushes: pressure-sensitive pen, fountain pen, pencil, marker and highlighter
+  * Import PDFs and annotate them; pages stay sharp at any zoom
+  * Lasso select, move and delete; undo and redo
+  * Per-note backgrounds: dots, lines, grid or blank
+  * Light and dark mode (PDFs and ink are adapted for dark mode)
+  * Library with groups, search, sorting and previews
+  * Auto-save or manual save; export and import notes as .avonote files
+
+  No accounts, no network access, no permissions, no ads.
+
+  This app is AI-generated (written by an AI coding assistant, directed and tested by a human) and is
+  alpha software. Keep backups of notes you care about.

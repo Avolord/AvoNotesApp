@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AvoNotes F-Droid Repository</title>
+<meta name="description" content="Add AvoNotes to F-Droid, Droid-ify or Neo Store.">
+<link rel="icon" href="repo/icons/icon.png">
+<style>
+  :root { --bg: #fcfcfa; --fg: #2b2b2b; --muted: #6b6b66; --accent: #2e7d32; --card: #ffffff; --border: #e6e6e1; --code: #f1f3ef; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1e1e1c; --fg: #e6e6e3; --muted: #a0a09a; --accent: #66bb6a; --card: #282826; --border: #34342f; --code: #2f2f2c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 16px 64px; }
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+  header img { width: 72px; height: 72px; border-radius: 50%; }
+  h1 { margin: 0; font-size: 1.8rem; }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin: 16px 0; }
+  .button { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 12px 20px; border-radius: 10px; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { .button { color: #10200f; } }
+  code { background: var(--code); padding: 2px 6px; border-radius: 6px; font-size: .92em; word-break: break-all; }
+  ol { padding-left: 1.3em; }
+  .warn { border-left: 4px solid #ef6c00; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="repo/icons/icon.png" alt="">
+    <div>
+      <h1>AvoNotes F-Droid Repository</h1>
+      <div class="muted">Infinite-canvas handwritten notes with PDF annotation</div>
+    </div>
+  </header>
+
+  <div class="card">
+    <p><strong>On your Android device</strong>, tap the button to add this repository to F-Droid, Droid-ify or Neo Store:</p>
+    <p><a class="button" href="fdroidrepos://avolord.github.io/AvoNotesApp/repo?fingerprint=86D81156D7F9FB9BF4F81898CC302FA3305B2867B31A5EC509632B1F5DF94EEF">Add to F-Droid</a></p>
+    <p class="muted">Or add it by hand in your client's repository settings:</p>
+    <ol>
+      <li>Address: <code>https://avolord.github.io/AvoNotesApp/repo</code></li>
+      <li>Fingerprint: <code>86D81156D7F9FB9BF4F81898CC302FA3305B2867B31A5EC509632B1F5DF94EEF</code></li>
+    </ol>
+    <p class="muted">Then refresh the repositories and search for <em>AvoNotes</em>. Updates arrive like any other F-Droid app.</p>
+  </div>
+
+  <div class="card">
+    <p>Prefer to install directly? Download the APK from the
+      <a href="https://github.com/Avolord/AvoNotesApp/releases">GitHub releases</a>.
+      The source code is at <a href="https://github.com/Avolord/AvoNotesApp">github.com/Avolord/AvoNotesApp</a>.</p>
+  </div>
+
+  <div class="card warn">
+    <p><strong>Heads-up:</strong> AvoNotes is AI-generated alpha software (written by an AI coding assistant,
+      directed and tested by a human). Keep backups of notes you care about.</p>
+  </div>
+</main>
+</body>
+</html>

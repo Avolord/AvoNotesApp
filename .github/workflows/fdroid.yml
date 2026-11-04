@@ -1,0 +1,130 @@
+name: F-Droid repo
+
+# Builds a self-hosted F-Droid repository from the APKs attached to GitHub releases and
+# publishes it with GitHub Pages at https://avolord.github.io/AvoNotesApp/repo
+#
+# Setup (once):
+#   - Settings > Pages > Source: "GitHub Actions"
+#   - The same secrets as the Release workflow. The repository index is signed with the
+#     "avonotes-fdroid" key stored in that keystore (store password = key password).
+#
+# Runs after the Release workflow, when a release is published/edited by hand, or manually.
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: fdroid-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build repository index
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      ok: ${{ steps.keystore.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore keystore
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.AVONOTES_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No AVONOTES_KEYSTORE_BASE64 secret: cannot sign the F-Droid index, skipping."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > fdroid/keystore.p12
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        if: steps.keystore.outputs.ok == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install fdroidserver
+        if: steps.keystore.outputs.ok == 'true'
+        run: pip install --disable-pip-version-check fdroidserver
+
+      - name: Download release APKs
+        if: steps.keystore.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p fdroid/repo
+          for tag in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName -q '.[].tagName'); do
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --dir fdroid/repo --clobber || true
+          done
+          ls -l fdroid/repo
+
+      - name: Prepare metadata and config
+        if: steps.keystore.outputs.ok == 'true'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.AVONOTES_KEYSTORE_PASSWORD }}
+        run: |
+          mkdir -p fdroid/repo/icons fdroid/metadata/com.avonotes/en-US/tenInchScreenshots
+          cp fdroid/icon.png fdroid/repo/icons/icon.png
+          cp docs/screenshots/*.png fdroid/metadata/com.avonotes/en-US/tenInchScreenshots/
+          cat > fdroid/config.yml <<EOF
+          repo_url: https://avolord.github.io/AvoNotesApp/repo
+          repo_name: AvoNotes
+          repo_description: >-
+            The official repository for AvoNotes, a native infinite-canvas note-taking app.
+            Built from https://github.com/Avolord/AvoNotesApp releases.
+          repo_icon: icon.png
+          archive_older: 0
+          keystore: keystore.p12
+          keystorepass: '${KEYSTORE_PASSWORD}'
+          keypass: '${KEYSTORE_PASSWORD}'
+          repo_keyalias: avonotes-fdroid
+          keydname: CN=AvoNotes F-Droid repo, O=Avolord
+          EOF
+          chmod 600 fdroid/config.yml
+
+      - name: Build signed index
+        if: steps.keystore.outputs.ok == 'true'
+        working-directory: fdroid
+        run: fdroid update --pretty --use-date-from-apk
+
+      - name: Assemble site
+        if: steps.keystore.outputs.ok == 'true'
+        run: |
+          mkdir -p _site
+          cp -r fdroid/repo _site/repo
+          cp fdroid/site/index.html _site/index.html
+          touch _site/.nojekyll
+
+      - name: Remove secrets from the workspace
+        if: always()
+        run: rm -f fdroid/keystore.p12 fdroid/config.yml
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.keystore.outputs.ok == 'true'
+        with:
+          path: _site
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    if: needs.build.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

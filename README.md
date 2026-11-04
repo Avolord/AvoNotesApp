@@ -50,14 +50,21 @@ Release APKs are signed with this certificate:
 SHA-256: 8C:62:1D:90:A9:B9:15:49:69:F7:E8:BE:C1:F0:AA:F7:C2:5E:EA:2A:98:B5:2A:A7:8B:00:6C:37:AD:36:33:39
 ```
 
-### Keep it updated
+### F-Droid (recommended, with automatic updates)
 
-- **[Obtainium](https://github.com/ImranR98/Obtainium):** add `https://github.com/Avolord/AvoNotesApp`
-  as an app source (enable "Include prereleases" while the app is in alpha). Obtainium installs new
-  releases straight from GitHub.
-- **F-Droid clients** (F-Droid, Droid-ify, Neo Store) only read F-Droid *repositories*, not GitHub
-  releases, so they can't use this page directly. A self-hosted F-Droid repository for AvoNotes is
-  planned.
+AvoNotes has its own F-Droid repository, built from the GitHub releases. Open
+**<https://avolord.github.io/AvoNotesApp/>** on your device and tap **Add to F-Droid**, or add it by hand
+in F-Droid, Droid-ify or Neo Store:
+
+| | |
+| --- | --- |
+| Address | `https://avolord.github.io/AvoNotesApp/repo` |
+| Fingerprint | `86D81156D7F9FB9BF4F81898CC302FA3305B2867B31A5EC509632B1F5DF94EEF` |
+
+### Obtainium
+
+Add `https://github.com/Avolord/AvoNotesApp` to [Obtainium](https://github.com/ImranR98/Obtainium)
+(enable "Include prereleases" while the app is in alpha) to install new releases straight from GitHub.
 
 ## Requirements
 
@@ -142,6 +149,11 @@ or through the environment variables `AVONOTES_KEYSTORE`, `AVONOTES_KEYSTORE_PAS
   needs the repository secrets `AVONOTES_KEYSTORE_BASE64` (the base64-encoded `.jks`),
   `AVONOTES_KEYSTORE_PASSWORD`, `AVONOTES_KEY_ALIAS` and `AVONOTES_KEY_PASSWORD`. Without them the
   workflow skips signing and says so.
+- **[F-Droid repo](.github/workflows/fdroid.yml)** runs after each release (or by hand). It collects the
+  APKs from all GitHub releases, builds a signed F-Droid index with `fdroidserver` (using the
+  `avonotes-fdroid` key in the same keystore and the same secrets), and publishes it with GitHub
+  Pages. The app's store listing is in [`fdroid/metadata/com.avonotes.yml`](fdroid/metadata/com.avonotes.yml),
+  and the screenshots come from `docs/screenshots/`.
 
 ## How it's put together
 
