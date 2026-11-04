@@ -16,6 +16,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import com.avonotes.model.NoteDocument
+import com.avonotes.model.Pattern
 import com.avonotes.model.PdfDoc
 import com.avonotes.model.PdfPageItem
 import com.avonotes.model.Stroke
@@ -64,7 +65,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
     var highlighterColor = 0x66FFEB3B
     var highlighterWidth = 18f
     var fingerDraws = false
-    var showGrid = true
+    /** Paper pattern of the open note (per note; dots by default). */
+    var pattern = Pattern.DOTS
         set(v) { field = v; invalidate() }
     private val density = resources.displayMetrics.density
     private val eraserRadiusPx = 14f * density
@@ -155,6 +157,9 @@ class InfiniteCanvasView @JvmOverloads constructor(
     private val pageBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE; color = 0x22000000; strokeWidth = 1f
     }
+    private val linePaint = Paint().apply { style = Paint.Style.STROKE }
+    private var lineColor = 0x1F000000
+    private var majorLineColor = 0x30000000
     private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0x33000000; strokeCap = Paint.Cap.ROUND
     }
@@ -188,6 +193,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
             pageFill.color = if (v) DarkInk.map(Color.WHITE) else Color.WHITE
             pageBorder.color = if (v) 0x33FFFFFF else 0x22000000
             gridPaint.color = if (v) 0x33FFFFFF else 0x33000000
+            lineColor = if (v) 0x1FFFFFFF else 0x1F000000
+            majorLineColor = if (v) 0x33FFFFFF else 0x30000000
             cursorPaint.color = if (v) 0x88FFFFFF.toInt() else 0x88000000.toInt()
             val accent = if (v) 0xFF81C784.toInt() else ACCENT
             dashPaint.color = accent
@@ -847,7 +854,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
         if (!loaded) return
         visible.set((0 - tx) / zoom, (0 - ty) / zoom, (width - tx) / zoom, (height - ty) / zoom)
 
-        if (showGrid) drawGrid(canvas)
+        drawPattern(canvas)
         drawPages(canvas)
 
         canvas.save()
@@ -919,25 +926,74 @@ class InfiniteCanvasView @JvmOverloads constructor(
         cache.endFrame()
     }
 
-    private fun drawGrid(canvas: Canvas) {
-        var spacing = GRID_SPACING * zoom
-        while (spacing < 18f * density) spacing *= 4f
-        val ox = ((tx % spacing) + spacing) % spacing
-        val oy = ((ty % spacing) + spacing) % spacing
-        val cols = (width / spacing).toInt() + 2
-        val rows = (height / spacing).toInt() + 2
-        val n = cols * rows * 2
-        if (gridBuf.size < n) gridBuf = FloatArray(n)
-        var k = 0
-        for (r in 0 until rows) {
-            val y = oy + r * spacing
-            for (c in 0 until cols) {
-                gridBuf[k++] = ox + c * spacing
-                gridBuf[k++] = y
+    /**
+     * Paper pattern, drawn in screen space but anchored to world coordinates, so it moves and
+     * scales with the content. When zoomed out far enough that it would get dense, the spacing
+     * jumps by 4x (multiples of the base spacing stay aligned, so nothing shifts).
+     */
+    private fun drawPattern(canvas: Canvas) {
+        when (pattern) {
+            Pattern.BLANK -> {}
+            Pattern.DOTS -> {
+                val spacing = adaptiveSpacing(18f)
+                val ox = ((tx % spacing) + spacing) % spacing
+                val oy = ((ty % spacing) + spacing) % spacing
+                val cols = (width / spacing).toInt() + 2
+                val rows = (height / spacing).toInt() + 2
+                ensureGridBuf(cols * rows * 2)
+                var k = 0
+                for (r in 0 until rows) {
+                    val y = oy + r * spacing
+                    for (c in 0 until cols) {
+                        gridBuf[k++] = ox + c * spacing
+                        gridBuf[k++] = y
+                    }
+                }
+                gridPaint.strokeWidth = 2f * density
+                canvas.drawPoints(gridBuf, 0, k, gridPaint)
+            }
+            Pattern.LINES -> {
+                linePaint.color = lineColor
+                drawLineSet(canvas, adaptiveSpacing(18f), horizontal = true, vertical = false)
+            }
+            Pattern.GRID -> {
+                val minor = adaptiveSpacing(12f)
+                linePaint.color = lineColor
+                drawLineSet(canvas, minor, horizontal = true, vertical = true)
+                linePaint.color = majorLineColor
+                drawLineSet(canvas, minor * 4f, horizontal = true, vertical = true)
             }
         }
-        gridPaint.strokeWidth = 2f * density
-        canvas.drawPoints(gridBuf, 0, k, gridPaint)
+    }
+
+    private fun adaptiveSpacing(minDp: Float): Float {
+        var spacing = GRID_SPACING * zoom
+        while (spacing < minDp * density) spacing *= 4f
+        return spacing
+    }
+
+    private fun drawLineSet(canvas: Canvas, spacing: Float, horizontal: Boolean, vertical: Boolean) {
+        val ox = ((tx % spacing) + spacing) % spacing
+        val oy = ((ty % spacing) + spacing) % spacing
+        val rows = if (horizontal) (height / spacing).toInt() + 2 else 0
+        val cols = if (vertical) (width / spacing).toInt() + 2 else 0
+        ensureGridBuf((rows + cols) * 4)
+        var k = 0
+        val w = width.toFloat(); val h = height.toFloat()
+        for (r in 0 until rows) {
+            val y = oy + r * spacing
+            gridBuf[k++] = 0f; gridBuf[k++] = y; gridBuf[k++] = w; gridBuf[k++] = y
+        }
+        for (c in 0 until cols) {
+            val x = ox + c * spacing
+            gridBuf[k++] = x; gridBuf[k++] = 0f; gridBuf[k++] = x; gridBuf[k++] = h
+        }
+        linePaint.strokeWidth = density
+        canvas.drawLines(gridBuf, 0, k, linePaint)
+    }
+
+    private fun ensureGridBuf(n: Int) {
+        if (gridBuf.size < n) gridBuf = FloatArray(n)
     }
 
     companion object {

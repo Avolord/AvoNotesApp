@@ -29,7 +29,12 @@
     <string name="back">Back</string>
     <string name="color_and_width">Color and width</string>
     <string name="finger_draws">Finger draws</string>
-    <string name="show_grid">Show dot grid</string>
+    <string name="background">Background…</string>
+    <string name="background_title">Background</string>
+    <string name="pattern_dots">Dots</string>
+    <string name="pattern_lines">Lines</string>
+    <string name="pattern_grid">Grid</string>
+    <string name="pattern_blank">Blank</string>
     <string name="fit_content">Zoom to fit</string>
     <string name="reset_zoom">Reset zoom (100%)</string>
     <string name="importing_pdf">Importing PDF…</string>

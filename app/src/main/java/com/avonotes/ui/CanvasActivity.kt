@@ -32,6 +32,7 @@ import com.avonotes.R
 import com.avonotes.canvas.InfiniteCanvasView
 import com.avonotes.io.NoteStore
 import com.avonotes.model.NoteDocument
+import com.avonotes.model.Pattern
 import com.avonotes.model.PdfDoc
 import com.avonotes.model.Tool
 import com.avonotes.pdf.PdfPageCache
@@ -123,7 +124,9 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
 
         io.execute {
             val doc = runCatching { store.load(dir) }.getOrNull()
+            val pattern = store.readPattern(dir)
             main.post {
+                canvasView.pattern = pattern
                 if (isDestroyed) return@post
                 if (doc == null) {
                     Toast.makeText(this, R.string.load_failed, Toast.LENGTH_LONG).show()
@@ -385,7 +388,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
     private fun showMore(anchor: View) {
         val m = PopupMenu(this, anchor)
         m.menu.add(0, 1, 0, R.string.finger_draws).apply { isCheckable = true; isChecked = canvasView.fingerDraws }
-        m.menu.add(0, 2, 1, R.string.show_grid).apply { isCheckable = true; isChecked = canvasView.showGrid }
+        m.menu.add(0, 2, 1, R.string.background)
         m.menu.add(0, 3, 2, R.string.fit_content)
         m.menu.add(0, 4, 3, R.string.reset_zoom)
         m.menu.add(0, 5, 4, R.string.rename_note)
@@ -400,13 +403,33 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
                     if (autoSave && dirty) save()
                 }
                 1 -> canvasView.fingerDraws = !canvasView.fingerDraws
-                2 -> canvasView.showGrid = !canvasView.showGrid
+                2 -> { choosePattern(); return@setOnMenuItemClickListener true }
                 3 -> canvasView.zoomToFit()
                 4 -> canvasView.resetZoom()
             }
             saveSettings(); true
         }
         m.show()
+    }
+
+    /** The background is note metadata like the name: applied and written right away. */
+    private fun choosePattern() {
+        if (!loaded) return
+        val options = arrayOf(Pattern.DOTS, Pattern.LINES, Pattern.GRID, Pattern.BLANK)
+        val labels = arrayOf(
+            getString(R.string.pattern_dots), getString(R.string.pattern_lines),
+            getString(R.string.pattern_grid), getString(R.string.pattern_blank),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.background_title)
+            .setSingleChoiceItems(labels, options.indexOf(canvasView.pattern)) { d, which ->
+                d.dismiss()
+                val p = options[which]
+                canvasView.pattern = p
+                io.execute { runCatching { store.writePattern(dir, p) } }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     /** The name is note metadata, so it is written right away (independent of saving the ink). */
@@ -445,7 +468,6 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         canvasView.highlighterColor = prefs.getInt("hlColor", HIGHLIGHTER_COLORS[0])
         canvasView.highlighterWidth = prefs.getFloat("hlWidth", 18f)
         canvasView.fingerDraws = prefs.getBoolean("fingerDraws", false)
-        canvasView.showGrid = prefs.getBoolean("showGrid", true)
         autoSave = prefs.getBoolean("autoSave", true)
     }
 
@@ -458,7 +480,6 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             .putInt("hlColor", canvasView.highlighterColor)
             .putFloat("hlWidth", canvasView.highlighterWidth)
             .putBoolean("fingerDraws", canvasView.fingerDraws)
-            .putBoolean("showGrid", canvasView.showGrid)
             .putBoolean("autoSave", autoSave)
             .apply()
     }

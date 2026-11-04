@@ -17,6 +17,15 @@ enum class Tool(val code: Int) {
     }
 }
 
+/** Paper pattern drawn behind a note's content. */
+enum class Pattern(val code: Int) {
+    DOTS(0), LINES(1), GRID(2), BLANK(3);
+
+    companion object {
+        fun fromCode(c: Int) = entries.firstOrNull { it.code == c } ?: DOTS
+    }
+}
+
 /**
  * A committed ink stroke. Immutable once created, which lets saving snapshot
  * the stroke list without copying point data.

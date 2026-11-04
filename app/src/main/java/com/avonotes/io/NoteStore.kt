@@ -3,6 +3,7 @@ package com.avonotes.io
 import android.content.Context
 import com.avonotes.model.NoteDocument
 import com.avonotes.model.PdfDoc
+import com.avonotes.model.Pattern
 import com.avonotes.model.PdfPageItem
 import com.avonotes.model.Stroke
 import com.avonotes.model.Tool
@@ -30,6 +31,7 @@ import java.util.zip.ZipOutputStream
  *   notes/<uuid>/thumb.webp  library preview (regenerated when stale; not exported)
  *   notes/<uuid>/pdf/<id>.pdf  embedded PDFs
  *   notes/<uuid>/group.txt   id of the group the note is in (absent = no group)
+ *   notes/<uuid>/background.txt  paper pattern code (absent = dots)
  *   groups.tsv               one "id<TAB>name" line per group
  *
  * Groups are one level deep. A note only stores its group's id, so renaming a group
@@ -87,6 +89,15 @@ class NoteStore(context: Context) {
     fun deleteGroup(id: String) {
         for (n in list()) if (n.groupId == id) setGroup(n.dir, null)
         writeGroups(groups().filter { it.id != id })
+    }
+
+    // ---------------------------------------------------------------- background pattern
+
+    fun readPattern(dir: File): Pattern =
+        Pattern.fromCode(runCatching { File(dir, PATTERN_FILE).readText().trim().toInt() }.getOrDefault(Pattern.DOTS.code))
+
+    fun writePattern(dir: File, p: Pattern) = atomicWrite(File(dir, PATTERN_FILE)) {
+        it.write(p.code.toString().toByteArray(Charsets.UTF_8))
     }
 
     fun readGroup(dir: File): String? =
@@ -157,7 +168,7 @@ class NoteStore(context: Context) {
 
     fun export(dir: File, out: OutputStream) {
         ZipOutputStream(BufferedOutputStream(out)).use { zip ->
-            for (name in listOf(NOTE_FILE, TITLE_FILE)) {
+            for (name in listOf(NOTE_FILE, TITLE_FILE, PATTERN_FILE)) {
                 val f = File(dir, name)
                 if (!f.exists()) continue
                 zip.putNextEntry(ZipEntry(name)); f.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
@@ -195,7 +206,7 @@ class NoteStore(context: Context) {
 
     /** Only accept the known file layout; rejects path traversal and anything unexpected. */
     private fun safeTarget(dir: File, name: String): File? {
-        if (name == NOTE_FILE || name == TITLE_FILE) return File(dir, name)
+        if (name == NOTE_FILE || name == TITLE_FILE || name == PATTERN_FILE) return File(dir, name)
         if (name.startsWith("$PDF_DIR/")) {
             val leaf = name.removePrefix("$PDF_DIR/")
             if (leaf.isNotEmpty() && SAFE_NAME.matches(leaf)) return File(File(dir, PDF_DIR), leaf)
@@ -208,6 +219,7 @@ class NoteStore(context: Context) {
         const val TITLE_FILE = "title.txt"
         const val THUMB_FILE = "thumb.webp"
         const val GROUP_FILE = "group.txt"
+        const val PATTERN_FILE = "background.txt"
         const val GROUPS_FILE = "groups.tsv"
         const val PDF_DIR = "pdf"
         private val SAFE_NAME = Regex("[A-Za-z0-9._-]+") // no slashes, so no traversal

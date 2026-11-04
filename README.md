@@ -11,7 +11,8 @@ No accounts, no network, no permissions, no dependencies beyond the Kotlin stdli
 - **Lasso** tool: draw a loop around ink to select it (a stroke counts if at least half of it is inside; PDF pages count if fully inside).
 - **Long-press a PDF page** with a finger (or the pen, in lasso mode) to pick it up; keep dragging to move it. Ink on the page moves with it.
 - Drag inside a selection (pen or finger) to move it. Tap **Delete** above it, or press Del, to delete. Tap outside to deselect. Moves and deletes can be undone.
-- **More** menu: finger drawing, dot grid, zoom to fit, reset zoom, rename, auto-save, theme.
+- **Brushes:** the pen tool has Pen (pressure), Fountain (calligraphic nib), Pencil (pressure sets darkness) and Marker (even line). Pick one in the pen's popup.
+- **More** menu: finger drawing, background (Dots, Lines, Grid, Blank; per note, dots by default), zoom to fit, reset zoom, rename, auto-save, theme.
 - Keyboard: Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z. Mouse: wheel pans, Ctrl+wheel zooms.
 - **Saving:** with Auto-save on (the default), notes save 1.5 s after each change and when you leave. Turn it off to save only with the Save button; closing with unsaved changes then asks to Save, Discard or Cancel. (Closing the app window from the system, rather than with back, can't be intercepted, so unsaved changes are lost then.)
 - **Names:** new notes ask for a name. Rename by tapping the title in a note, or long-press a note in the library.
