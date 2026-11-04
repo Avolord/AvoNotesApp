@@ -29,26 +29,72 @@ import java.util.zip.ZipOutputStream
  *   notes/<uuid>/title.txt   UTF-8 title (separate so renaming/listing is cheap)
  *   notes/<uuid>/thumb.webp  library preview (regenerated when stale; not exported)
  *   notes/<uuid>/pdf/<id>.pdf  embedded PDFs
+ *   notes/<uuid>/group.txt   id of the group the note is in (absent = no group)
+ *   groups.tsv               one "id<TAB>name" line per group
  *
- * An exported ".avonote" file is simply a zip of that folder.
+ * Groups are one level deep. A note only stores its group's id, so renaming a group
+ * touches a single file. An exported ".avonote" file is a zip of the note folder
+ * (without its group).
  */
 class NoteStore(context: Context) {
     val root = File(context.filesDir, "notes").apply { mkdirs() }
+    private val groupsFile = File(context.filesDir, GROUPS_FILE)
 
-    class NoteInfo(val dir: File, val title: String, val modified: Long)
+    class NoteInfo(val dir: File, val title: String, val modified: Long, val groupId: String?)
+    data class Group(val id: String, val name: String)
 
     fun list(): List<NoteInfo> =
         (root.listFiles() ?: emptyArray())
             .filter { File(it, NOTE_FILE).exists() }
-            .map { NoteInfo(it, readTitle(it), File(it, NOTE_FILE).lastModified()) }
+            .map { NoteInfo(it, readTitle(it), File(it, NOTE_FILE).lastModified(), readGroup(it)) }
             .sortedByDescending { it.modified }
 
-    fun create(title: String): File {
+    fun create(title: String, groupId: String? = null): File {
         val dir = File(root, UUID.randomUUID().toString())
         File(dir, PDF_DIR).mkdirs()
         writeTitle(dir, title)
+        if (groupId != null) setGroup(dir, groupId)
         save(dir, NoteDocument().apply { viewZoom = 0f })
         return dir
+    }
+
+    // ---------------------------------------------------------------- groups
+
+    fun groups(): List<Group> =
+        runCatching { groupsFile.readLines(Charsets.UTF_8) }.getOrDefault(emptyList())
+            .mapNotNull { line ->
+                val tab = line.indexOf('\t')
+                if (tab <= 0) null else Group(line.substring(0, tab), line.substring(tab + 1))
+            }
+            .sortedBy { it.name.lowercase() }
+
+    private fun writeGroups(groups: List<Group>) = atomicWrite(groupsFile) { out ->
+        // Names are single-line (tabs/newlines replaced) so the file stays parseable.
+        val text = groups.joinToString("\n") { "${it.id}\t${it.name.replace(Regex("[\\t\\r\\n]"), " ")}" }
+        out.write(text.toByteArray(Charsets.UTF_8))
+    }
+
+    fun createGroup(name: String): Group {
+        val g = Group(UUID.randomUUID().toString(), name)
+        writeGroups(groups() + g)
+        return g
+    }
+
+    fun renameGroup(id: String, name: String) =
+        writeGroups(groups().map { if (it.id == id) it.copy(name = name) else it })
+
+    /** Removes the group; its notes are kept and simply leave the group. */
+    fun deleteGroup(id: String) {
+        for (n in list()) if (n.groupId == id) setGroup(n.dir, null)
+        writeGroups(groups().filter { it.id != id })
+    }
+
+    fun readGroup(dir: File): String? =
+        runCatching { File(dir, GROUP_FILE).readText().trim() }.getOrNull()?.ifEmpty { null }
+
+    fun setGroup(dir: File, groupId: String?) {
+        val f = File(dir, GROUP_FILE)
+        if (groupId == null) f.delete() else atomicWrite(f) { it.write(groupId.toByteArray(Charsets.UTF_8)) }
     }
 
     fun readTitle(dir: File): String =
@@ -161,6 +207,8 @@ class NoteStore(context: Context) {
         const val NOTE_FILE = "note.avn"
         const val TITLE_FILE = "title.txt"
         const val THUMB_FILE = "thumb.webp"
+        const val GROUP_FILE = "group.txt"
+        const val GROUPS_FILE = "groups.tsv"
         const val PDF_DIR = "pdf"
         private val SAFE_NAME = Regex("[A-Za-z0-9._-]+") // no slashes, so no traversal
         private const val MAGIC = 0x41564E31 // "AVN1"

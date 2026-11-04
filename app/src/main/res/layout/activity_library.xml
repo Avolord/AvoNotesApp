@@ -15,10 +15,23 @@
         android:paddingEnd="12dp"
         android:paddingBottom="12dp">
 
+        <!-- Shown inside a group: back to all notes. -->
+        <ImageButton
+            android:id="@+id/btn_up"
+            style="@style/ToolButton"
+            android:layout_marginStart="-10dp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            android:visibility="gone" />
+
         <TextView
+            android:id="@+id/header_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="@string/app_name"
             android:textColor="@color/icon"
             android:textSize="26sp"
@@ -30,6 +43,13 @@
             android:layout_marginEnd="4dp"
             android:contentDescription="@string/theme"
             android:src="@drawable/ic_theme" />
+
+        <Button
+            android:id="@+id/btn_new_group"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/new_group" />
 
         <Button
             android:id="@+id/btn_import"

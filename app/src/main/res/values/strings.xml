@@ -39,6 +39,20 @@
     <string name="saved">Saved</string>
     <string name="save_failed">Saving failed.</string>
     <string name="autosave">Auto-save</string>
+    <string name="new_group">New group</string>
+    <string name="name_new_group">Name the group</string>
+    <string name="rename_group">Rename group</string>
+    <string name="delete_group">Delete group</string>
+    <string name="delete_group_confirm">Delete the group “%1$s”? Its notes are kept and moved out of the group.</string>
+    <string name="move_to_group">Move to group…</string>
+    <string name="no_group">No group</string>
+    <string name="new_group_ellipsis">New group…</string>
+    <string name="group_default_name">Group</string>
+    <string name="empty_group">This group is empty. Tap “New note”, or long-press a note elsewhere and choose “Move to group…”.</string>
+    <plurals name="note_count">
+        <item quantity="one">%d note</item>
+        <item quantity="other">%d notes</item>
+    </plurals>
     <string name="theme">Theme</string>
     <string name="theme_system">Follow system</string>
     <string name="theme_light">Light</string>

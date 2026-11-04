@@ -16,7 +16,8 @@ No accounts, no network, no permissions, no dependencies beyond the Kotlin stdli
 - **Saving:** with Auto-save on (the default), notes save 1.5 s after each change and when you leave. Turn it off to save only with the Save button; closing with unsaved changes then asks to Save, Discard or Cancel. (Closing the app window from the system, rather than with back, can't be intercepted, so unsaved changes are lost then.)
 - **Names:** new notes ask for a name. Rename by tapping the title in a note, or long-press a note in the library.
 - **Dark mode:** Theme (Follow system / Light / Dark) in the library header or a note's More menu. In dark mode, PDF pages and pen ink are shown with inverted lightness so annotations stay readable; highlighters keep their color.
-- In the library, long-press a note to rename, export (`.avonote`), or delete it. **Import** loads an `.avonote` file.
+- In the library, long-press a note to rename, move to a group, export (`.avonote`), or delete it. **Import** loads an `.avonote` file.
+- **Groups:** **New group** creates one; groups show first, as cards with previews of their newest notes. Tap a group to see its notes; new and imported notes made there go into it. Long-press a group to rename or delete it (deleting a group keeps its notes). Groups are one level deep.
 
 ## Build
 
