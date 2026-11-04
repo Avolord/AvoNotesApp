@@ -27,15 +27,25 @@
     <string name="import_pdf">Import PDF</string>
     <string name="more">More</string>
     <string name="back">Back</string>
-    <string name="finger_draws">Finger draws</string>
-    <string name="background">Background…</string>
+    <string name="finger_draws">Draw with finger</string>
+    <string name="finger_draws_hint">One finger draws; two fingers pan and zoom.</string>
     <string name="background_title">Background</string>
+    <string name="section_view">View</string>
+    <string name="section_note">This note</string>
+    <string name="section_settings">Settings</string>
+    <string name="zoom_100">100%</string>
+    <string name="rename_note_ellipsis">Rename…</string>
+    <string name="autosave_hint">Save changes automatically while you write.</string>
+    <string name="eraser_stroke">Whole stroke</string>
+    <string name="eraser_partial">Partial</string>
+    <string name="eraser_stroke_hint">Touching a stroke removes all of it.</string>
+    <string name="eraser_partial_hint">Removes only the ink under the eraser.</string>
+    <string name="eraser_size">Size</string>
     <string name="pattern_dots">Dots</string>
     <string name="pattern_lines">Lines</string>
     <string name="pattern_grid">Grid</string>
     <string name="pattern_blank">Blank</string>
     <string name="fit_content">Zoom to fit</string>
-    <string name="reset_zoom">Reset zoom (100%)</string>
     <string name="importing_pdf">Importing PDF…</string>
     <string name="pdf_failed">Could not open that PDF (it may be encrypted or damaged).</string>
     <string name="import_failed">Could not import that file.</string>
@@ -78,6 +88,7 @@
     </plurals>
     <string name="theme">Theme</string>
     <string name="theme_system">Follow system</string>
+    <string name="theme_system_short">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="discard">Discard</string>

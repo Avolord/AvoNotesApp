@@ -24,7 +24,6 @@ import android.view.View
 import android.view.WindowInsets
 import android.widget.ImageButton
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.PopupWindow
 import android.widget.SeekBar
 import android.widget.TextView
@@ -116,6 +115,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         btnHighlighter.setOnLongClickListener {
             canvasView.tool = Tool.HIGHLIGHTER; updateToolUi(); showPenPopup(it); true
         }
+        btnEraser.setOnLongClickListener { canvasView.tool = Tool.ERASER; updateToolUi(); showEraserPopup(it); true }
         btnUndo.setOnClickListener { canvasView.undo() }
         btnRedo.setOnClickListener { canvasView.redo() }
         findViewById<View>(R.id.btn_pdf).setOnClickListener { pickPdf() }
@@ -257,6 +257,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
 
     private fun selectTool(t: Tool, anchor: View) {
         if (canvasView.tool == t && (t == Tool.PEN || t == Tool.HIGHLIGHTER)) showPenPopup(anchor)
+        if (canvasView.tool == t && t == Tool.ERASER) showEraserPopup(anchor)
         canvasView.tool = t
         updateToolUi()
     }
@@ -387,51 +388,81 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         popup.showAsDropDown(anchor, 0, (4 * d).toInt(), Gravity.START)
     }
 
-    private fun showMore(anchor: View) {
-        val m = PopupMenu(this, anchor)
-        m.menu.add(0, 1, 0, R.string.finger_draws).apply { isCheckable = true; isChecked = canvasView.fingerDraws }
-        m.menu.add(0, 2, 1, R.string.background)
-        m.menu.add(0, 3, 2, R.string.fit_content)
-        m.menu.add(0, 4, 3, R.string.reset_zoom)
-        m.menu.add(0, 5, 4, R.string.rename_note)
-        m.menu.add(0, 6, 5, R.string.autosave).apply { isCheckable = true; isChecked = autoSave }
-        if (ThemePref.supported) m.menu.add(0, 7, 6, R.string.theme)
-        m.setOnMenuItemClickListener {
-            when (it.itemId) {
-                5 -> { renameNote(); return@setOnMenuItemClickListener true }
-                7 -> { ThemePref.showDialog(this); return@setOnMenuItemClickListener true }
-                6 -> {
-                    autoSave = !autoSave
-                    if (autoSave && dirty) save()
-                }
-                1 -> canvasView.fingerDraws = !canvasView.fingerDraws
-                2 -> { choosePattern(); return@setOnMenuItemClickListener true }
-                3 -> canvasView.zoomToFit()
-                4 -> canvasView.resetZoom()
-            }
-            saveSettings(); true
+    private fun showEraserPopup(anchor: View) {
+        val panel = PopupPanel(this, widthDp = 300)
+        panel.header(R.string.eraser)
+        lateinit var hint: TextView
+        panel.choice(
+            listOf(getString(R.string.eraser_stroke), getString(R.string.eraser_partial)),
+            if (canvasView.partialEraser) 1 else 0,
+        ) { i ->
+            canvasView.partialEraser = i == 1
+            hint.setText(if (i == 1) R.string.eraser_partial_hint else R.string.eraser_stroke_hint)
+            saveSettings()
         }
-        m.show()
+        hint = panel.hint(if (canvasView.partialEraser) R.string.eraser_partial_hint else R.string.eraser_stroke_hint)
+        panel.slider(R.string.eraser_size, 4f..48f, canvasView.eraserSize, { "${it.toInt()} dp" }) {
+            canvasView.eraserSize = it
+        }
+        panel.popup.setOnDismissListener { saveSettings() }
+        panel.showBelow(anchor)
+    }
+
+    /**
+     * The More panel: view actions, this note's name and background, and app settings.
+     * Everything applies immediately.
+     */
+    private fun showMore(anchor: View) {
+        val panel = PopupPanel(this, widthDp = 340)
+
+        panel.header(R.string.section_view)
+        panel.actions(
+            R.string.fit_content to { canvasView.zoomToFit() },
+            R.string.zoom_100 to { canvasView.resetZoom() },
+        )
+
+        if (loaded) {
+            panel.header(R.string.section_note)
+            panel.action(R.string.rename_note_ellipsis) { renameNote() }
+            panel.hint(R.string.background_title)
+            val patterns = listOf(Pattern.DOTS, Pattern.LINES, Pattern.GRID, Pattern.BLANK)
+            panel.choice(
+                listOf(
+                    getString(R.string.pattern_dots), getString(R.string.pattern_lines),
+                    getString(R.string.pattern_grid), getString(R.string.pattern_blank),
+                ),
+                patterns.indexOf(canvasView.pattern),
+            ) { i -> setPattern(patterns[i]) }
+        }
+
+        panel.header(R.string.section_settings)
+        panel.switch(R.string.finger_draws, R.string.finger_draws_hint, canvasView.fingerDraws) {
+            canvasView.fingerDraws = it; saveSettings()
+        }
+        panel.switch(R.string.autosave, R.string.autosave_hint, autoSave) {
+            autoSave = it
+            if (autoSave && dirty) save()
+            saveSettings()
+        }
+        if (ThemePref.supported) {
+            panel.hint(R.string.theme)
+            panel.choice(
+                listOf(getString(R.string.theme_system_short), getString(R.string.theme_light), getString(R.string.theme_dark)),
+                ThemePref.get(this),
+            ) { i ->
+                // The theme change re-colors this screen; the panel was built in the old colors.
+                panel.popup.dismiss()
+                ThemePref.set(this, i)
+            }
+        }
+        panel.showBelow(anchor, Gravity.END)
     }
 
     /** The background is note metadata like the name: applied and written right away. */
-    private fun choosePattern() {
+    private fun setPattern(p: Pattern) {
         if (!loaded) return
-        val options = arrayOf(Pattern.DOTS, Pattern.LINES, Pattern.GRID, Pattern.BLANK)
-        val labels = arrayOf(
-            getString(R.string.pattern_dots), getString(R.string.pattern_lines),
-            getString(R.string.pattern_grid), getString(R.string.pattern_blank),
-        )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.background_title)
-            .setSingleChoiceItems(labels, options.indexOf(canvasView.pattern)) { d, which ->
-                d.dismiss()
-                val p = options[which]
-                canvasView.pattern = p
-                io.execute { runCatching { store.writePattern(dir, p) } }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        canvasView.pattern = p
+        io.execute { runCatching { store.writePattern(dir, p) } }
     }
 
     /** The name is note metadata, so it is written right away (independent of saving the ink). */
@@ -470,6 +501,8 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         canvasView.highlighterColor = prefs.getInt("hlColor", HIGHLIGHTER_COLORS[0])
         canvasView.highlighterWidth = prefs.getFloat("hlWidth", 18f)
         canvasView.fingerDraws = prefs.getBoolean("fingerDraws", false)
+        canvasView.partialEraser = prefs.getBoolean("partialEraser", false)
+        canvasView.eraserSize = prefs.getFloat("eraserSize", InfiniteCanvasView.DEFAULT_ERASER_SIZE)
         autoSave = prefs.getBoolean("autoSave", true)
     }
 
@@ -482,6 +515,8 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             .putInt("hlColor", canvasView.highlighterColor)
             .putFloat("hlWidth", canvasView.highlighterWidth)
             .putBoolean("fingerDraws", canvasView.fingerDraws)
+            .putBoolean("partialEraser", canvasView.partialEraser)
+            .putFloat("eraserSize", canvasView.eraserSize)
             .putBoolean("autoSave", autoSave)
             .apply()
     }

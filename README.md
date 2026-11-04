@@ -32,6 +32,8 @@ More:
 
 - **Infinite canvas** with smooth pan and pinch-zoom (2%–4000%), palm rejection while the pen is down,
   and the S Pen button or eraser tip for erasing.
+- **Two erasers:** remove whole strokes, or erase partially to cut away just the ink under the eraser.
+  The size is adjustable.
 - **Backgrounds per note:** dots (default), lines, grid or blank.
 - **Saving your way:** auto-save (default) or manual save with an unsaved-changes prompt.
 - **Your files, your device:** notes live in the app's storage; export any note as an `.avonote`
@@ -92,7 +94,9 @@ Add `https://github.com/Avolord/AvoNotesApp` to [Obtainium](https://github.com/I
 
 ## Using it
 
-- **Stylus** draws. The S Pen side button or an eraser tip erases whole strokes.
+- **Stylus** draws. The S Pen side button or an eraser tip erases.
+- Tap the active eraser again (or long-press it) to choose **Whole stroke** or **Partial** erasing and
+  the eraser size. Partial erasing splits a stroke where you erase through it; one undo restores it.
 - **One finger** pans, **two fingers** pinch-zoom.
 - Tap the active pen or highlighter again (or long-press it) for brush, color and width. The pen icon
   shows the current ink color; the marker shows it as a swatch.
@@ -101,7 +105,8 @@ Add `https://github.com/Avolord/AvoNotesApp` to [Obtainium](https://github.com/I
   to delete it. Tap outside to deselect.
 - **Long-press a PDF page** with a finger (or the pen in lasso mode) to pick it up and move it; its ink
   comes along. Deleting a page keeps the handwriting that was on it.
-- **More** menu: finger drawing, background, zoom to fit, reset zoom, rename, auto-save, theme.
+- **More** panel: zoom to fit or 100%; rename the note and pick its background; and the settings
+  (draw with finger, auto-save, theme). Everything applies right away.
 - **Saving:** with auto-save on (default), notes save 1.5 s after each change and when you leave. With
   it off, use the Save button. Leaving with unsaved changes asks to Save, Discard or Cancel.
   (Closing the window from the system, rather than with back, can't be intercepted.)
@@ -167,7 +172,7 @@ or through the environment variables `AVONOTES_KEYSTORE`, `AVONOTES_KEYSTORE_PAS
 | `pdf/PdfPageCache.kt` | Background PDF rendering, LOD cache, deep-zoom patches |
 | `io/NoteStore.kt` | Storage: notes, groups, previews, import/export |
 | `io/Thumbnailer.kt` | Library previews |
-| `ui/` | Library and canvas screens, dialogs (platform widgets only) |
+| `ui/` | Library and canvas screens, popup panels and dialogs (platform widgets only) |
 
 World units are PDF points (1/72 inch). At 100% zoom, 1 unit = 1 dp.
 
@@ -185,7 +190,6 @@ files/groups.tsv                   group id <TAB> name
 
 ## Known limits and ideas
 
-- The eraser removes whole strokes; there is no partial eraser yet.
 - Selections can be moved and deleted, but not yet resized, rotated, copied or recolored.
 - Groups are one level deep, and exporting a note doesn't include its group.
 - No export to PDF yet.

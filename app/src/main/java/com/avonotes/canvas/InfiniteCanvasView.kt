@@ -68,8 +68,12 @@ class InfiniteCanvasView @JvmOverloads constructor(
     /** Paper pattern of the open note (per note; dots by default). */
     var pattern = Pattern.DOTS
         set(v) { field = v; invalidate() }
+    /** Partial eraser: cuts away just the ink under the eraser. Off: erases whole strokes. */
+    var partialEraser = false
+    /** Eraser radius in dp (screen size, independent of zoom). */
+    var eraserSize = DEFAULT_ERASER_SIZE
     private val density = resources.displayMetrics.density
-    private val eraserRadiusPx = 14f * density
+    private val eraserRadiusPx get() = eraserSize * density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val longPressMs = ViewConfiguration.getLongPressTimeout().toLong()
 
@@ -94,6 +98,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
     private sealed class Edit {
         class AddStrokes(val strokes: List<Stroke>) : Edit()
         class RemoveStrokes(val strokes: List<Stroke>) : Edit()
+        /** Partial erase: [old] strokes were cut into the remaining pieces [new]. */
+        class Replace(val old: List<Stroke>, val new: List<Stroke>) : Edit()
         class AddPdf(val doc: PdfDoc, val pages: List<PdfPageItem>) : Edit()
         class Move(
             val oldStrokes: List<Stroke>, val newStrokes: List<Stroke>,
@@ -126,7 +132,10 @@ class InfiniteCanvasView @JvmOverloads constructor(
     private var liveTool = Tool.PEN
     private var liveColor = 0
     private var liveWidth = 0f
+    /** Strokes that existed before this erase gesture and were removed or cut by it. */
     private val erased = ArrayList<Stroke>()
+    /** Pieces left by cutting during this gesture (partial eraser), currently in the tiles. */
+    private val erasePieces = HashSet<Stroke>()
     private var eraserX = Float.NaN
     private var eraserY = Float.NaN
     private var lastEraseWX = Float.NaN
@@ -294,6 +303,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
         when (e) {
             is Edit.AddStrokes -> e.strokes.forEach { tiles.add(it) }
             is Edit.RemoveStrokes -> e.strokes.forEach { tiles.remove(it) }
+            is Edit.Replace -> { e.old.forEach { tiles.remove(it) }; e.new.forEach { tiles.add(it) } }
             is Edit.AddPdf -> { pdfDocs.add(e.doc); pages.addAll(e.pages) }
             is Edit.Move -> {
                 e.oldStrokes.forEach { tiles.remove(it) }
@@ -305,18 +315,22 @@ class InfiniteCanvasView @JvmOverloads constructor(
                 pages.removeAll(e.pages.map { it.second }.toSet())
             }
         }
-        if (record) {
-            undoStack.addLast(e)
-            if (undoStack.size > MAX_HISTORY) undoStack.removeFirst()
-            redoStack.clear()
-            changed()
-        }
+        if (record) record(e)
+    }
+
+    /** Pushes an edit that is already reflected in the content onto the undo history. */
+    private fun record(e: Edit) {
+        undoStack.addLast(e)
+        if (undoStack.size > MAX_HISTORY) undoStack.removeFirst()
+        redoStack.clear()
+        changed()
     }
 
     private fun revert(e: Edit) {
         when (e) {
             is Edit.AddStrokes -> e.strokes.forEach { tiles.remove(it) }
             is Edit.RemoveStrokes -> e.strokes.forEach { tiles.add(it) }
+            is Edit.Replace -> { e.new.forEach { tiles.remove(it) }; e.old.forEach { tiles.add(it) } }
             is Edit.AddPdf -> { pdfDocs.remove(e.doc); pages.removeAll(e.pages.toSet()) }
             is Edit.Move -> {
                 e.newStrokes.forEach { tiles.remove(it) }
@@ -736,7 +750,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
         // Sample along the path since the last event so fast swipes don't skip strokes.
         if (!lastEraseWX.isNaN()) {
             val d = hypot(wx - lastEraseWX, wy - lastEraseWY)
-            val steps = (d / (r * 0.75f)).toInt()
+            // Partial erasing cuts along each circle, so sample densely enough to leave straight edges.
+            val steps = (d / (r * if (partialEraser) 0.4f else 0.75f)).toInt()
             for (k in 1..steps) {
                 val f = k.toFloat() / (steps + 1)
                 eraseWorld(lastEraseWX + (wx - lastEraseWX) * f, lastEraseWY + (wy - lastEraseWY) * f, r)
@@ -748,10 +763,25 @@ class InfiniteCanvasView @JvmOverloads constructor(
 
     private fun eraseWorld(wx: Float, wy: Float, r: Float) {
         tmpRect.set(wx - r, wy - r, wx + r, wy + r)
-        tiles.forEachIn(tmpRect) { s ->
-            if (s.hitTest(wx, wy, r)) { tiles.remove(s); erased.add(s) }
+        if (!partialEraser) {
+            tiles.forEachIn(tmpRect) { s ->
+                if (s.hitTest(wx, wy, r)) { tiles.remove(s); erased.add(s) }
+            }
+            return
+        }
+        // Collect first: cutting changes the tiles being iterated.
+        eraseHits.clear()
+        tiles.forEachIn(tmpRect) { s -> eraseHits.add(s) }
+        for (s in eraseHits) {
+            val pieces = s.erase(wx, wy, r) ?: continue
+            tiles.remove(s)
+            // A piece cut again in the same gesture was never part of the note: just drop it.
+            if (!erasePieces.remove(s)) erased.add(s)
+            for (p in pieces) { tiles.add(p); erasePieces.add(p) }
         }
     }
+
+    private val eraseHits = ArrayList<Stroke>()
 
     private fun finishInk(e: MotionEvent) {
         when (mode) {
@@ -766,8 +796,11 @@ class InfiniteCanvasView @JvmOverloads constructor(
                 liveCount = 0
             }
             Mode.ERASE -> {
-                if (erased.isNotEmpty()) apply(Edit.RemoveStrokes(ArrayList(erased)), record = true)
+                // The tiles already show the result; just record it for undo.
+                if (erasePieces.isNotEmpty()) record(Edit.Replace(ArrayList(erased), erasePieces.sortedBy { it.seq }))
+                else if (erased.isNotEmpty()) record(Edit.RemoveStrokes(ArrayList(erased)))
                 erased.clear()
+                erasePieces.clear()
                 eraserX = Float.NaN
             }
             else -> {}
@@ -778,8 +811,12 @@ class InfiniteCanvasView @JvmOverloads constructor(
     }
 
     private fun cancelInk() {
-        if (mode == Mode.ERASE) erased.forEach { tiles.add(it) } // put back what was erased
+        if (mode == Mode.ERASE) { // put back what was erased
+            erasePieces.forEach { tiles.remove(it) }
+            erased.forEach { tiles.add(it) }
+        }
         erased.clear()
+        erasePieces.clear()
         liveCount = 0
         lassoCount = 0
         eraserX = Float.NaN
@@ -1004,6 +1041,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
         private const val GRID_SPACING = 32f
         private const val PATCH_DELAY_MS = 180L
         private const val LASSO_FRACTION = 0.5f
+        const val DEFAULT_ERASER_SIZE = 14f
         private const val ACCENT = 0xFF2E7D32.toInt()
     }
 }
