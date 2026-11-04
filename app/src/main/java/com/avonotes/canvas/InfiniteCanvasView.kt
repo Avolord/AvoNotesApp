@@ -45,7 +45,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     interface Listener {
-        fun onContentChanged()
+        fun onNoteChanged()
         fun onHistoryChanged(canUndo: Boolean, canRedo: Boolean)
     }
 
@@ -307,7 +307,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
     private fun changed() {
         invalidate()
         notifyHistory()
-        listener?.onContentChanged()
+        listener?.onNoteChanged()
     }
 
     private fun notifyHistory() =

@@ -35,4 +35,11 @@
     <string name="exported">Exported.</string>
     <string name="load_failed">This note could not be loaded.</string>
     <string name="width">Width</string>
+    <string name="save">Save</string>
+    <string name="saved">Saved</string>
+    <string name="save_failed">Saving failed.</string>
+    <string name="autosave">Auto-save</string>
+    <string name="discard">Discard</string>
+    <string name="unsaved_title">Unsaved changes</string>
+    <string name="unsaved_message">Save changes to “%1$s” before closing?</string>
 </resources>

@@ -1,6 +1,9 @@
 package com.avonotes.ui
 
 import android.app.Activity
+import android.app.AlertDialog
+import android.os.Build
+import android.window.OnBackInvokedDispatcher
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -43,6 +46,8 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
     private lateinit var btnLasso: ImageButton
     private lateinit var btnUndo: ImageButton
     private lateinit var btnRedo: ImageButton
+    private lateinit var btnSave: ImageButton
+    private var autoSave = true
     private lateinit var titleView: TextView
     private var noteTitle = ""
 
@@ -72,6 +77,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         btnLasso = findViewById(R.id.btn_lasso)
         btnUndo = findViewById(R.id.btn_undo)
         btnRedo = findViewById(R.id.btn_redo)
+        btnSave = findViewById(R.id.btn_save)
         // btnPen / btnHighlighter use the untinted ToolButton.Ink style; updateToolUi() colors them.
 
         // Toolbar sits under the status bar; the canvas itself draws edge to edge.
@@ -85,7 +91,17 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         if (resources.configuration.screenWidthDp < 560) title.visibility = View.GONE
 
         loadSettings()
-        findViewById<View>(R.id.btn_back).setOnClickListener { finish() }
+        findViewById<View>(R.id.btn_back).setOnClickListener { attemptClose() }
+        btnSave.setOnClickListener {
+            save(withThumb = true) { ok -> if (ok) Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show() }
+        }
+        setDirty(false)
+        if (Build.VERSION.SDK_INT >= 33) {
+            // Apps targeting API 36 no longer get onBackPressed(); intercept back here instead.
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
+                attemptClose()
+            }
+        }
         btnPen.setOnClickListener { selectTool(Tool.PEN, it) }
         btnHighlighter.setOnClickListener { selectTool(Tool.HIGHLIGHTER, it) }
         btnEraser.setOnClickListener { selectTool(Tool.ERASER, it) }
@@ -121,23 +137,25 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
 
     override fun onPause() {
         super.onPause()
-        save(withThumb = true)
+        // With auto-save off, nothing is written until the user saves (or confirms on close).
+        if (autoSave) save(withThumb = true)
         saveSettings()
     }
 
     override fun onDestroy() {
         main.removeCallbacks(autosave)
         if (::canvasView.isInitialized) canvasView.release()
-        io.shutdown()
+        io.shutdown() // queued saves still finish
         super.onDestroy()
     }
 
     // ---------------------------------------------------------------- saving
 
-    override fun onContentChanged() {
-        dirty = true
+    // Not onContentChanged(): that name belongs to Activity and is called by setContentView().
+    override fun onNoteChanged() {
+        setDirty(true)
         main.removeCallbacks(autosave)
-        main.postDelayed(autosave, AUTOSAVE_DELAY_MS)
+        if (autoSave) main.postDelayed(autosave, AUTOSAVE_DELAY_MS)
     }
 
     override fun onHistoryChanged(canUndo: Boolean, canRedo: Boolean) {
@@ -145,19 +163,50 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         btnRedo.isEnabled = canRedo; btnRedo.alpha = if (canRedo) 1f else 0.35f
     }
 
-    /** Snapshots on the UI thread (cheap: strokes are immutable) and writes on the IO thread. */
-    private fun save(withThumb: Boolean = false) {
+    private fun setDirty(d: Boolean) {
+        dirty = d
+        btnSave.isEnabled = d
+        btnSave.alpha = if (d) 1f else 0.35f
+    }
+
+    /**
+     * Snapshots on the UI thread (cheap: strokes are immutable) and writes on the IO thread.
+     * [then] runs on the UI thread once the write has finished (successfully or not).
+     */
+    private fun save(withThumb: Boolean = false, then: ((Boolean) -> Unit)? = null) {
         main.removeCallbacks(autosave)
-        if (!loaded) return
+        if (!loaded) { then?.invoke(true); return }
         val snap = NoteDocument()
         canvasView.snapshot(snap)
-        dirty = false
+        setDirty(false)
         io.execute {
-            runCatching { store.save(dir, snap) }.onFailure { main.post { dirty = true } }
-            // The preview is only needed in the library, so render it when leaving the note.
-            if (withThumb) runCatching { store.writeThumb(dir, snap) }
+            val ok = runCatching { store.save(dir, snap) }.isSuccess
+            // The preview is only needed in the library, so render it when leaving or saving by hand.
+            if (ok && withThumb) runCatching { store.writeThumb(dir, snap) }
+            main.post {
+                if (!ok) {
+                    setDirty(true)
+                    if (!isFinishing) Toast.makeText(this, R.string.save_failed, Toast.LENGTH_LONG).show()
+                }
+                then?.invoke(ok)
+            }
         }
     }
+
+    /** Back button, system back, Escape: ask first if auto-save is off and there are unsaved changes. */
+    private fun attemptClose() {
+        if (autoSave || !dirty) { finish(); return }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.unsaved_title)
+            .setMessage(getString(R.string.unsaved_message, noteTitle.ifEmpty { getString(R.string.untitled) }))
+            .setPositiveButton(R.string.save) { _, _ -> save(withThumb = true) { ok -> if (ok) finish() } }
+            .setNegativeButton(R.string.discard) { _, _ -> setDirty(false); finish() }
+            .setNeutralButton(R.string.cancel, null)
+            .show()
+    }
+
+    @Deprecated("Used below API 33; newer versions use the OnBackInvokedCallback.")
+    override fun onBackPressed() = attemptClose()
 
     // ---------------------------------------------------------------- tools
 
@@ -247,9 +296,14 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         m.menu.add(0, 3, 2, R.string.fit_content)
         m.menu.add(0, 4, 3, R.string.reset_zoom)
         m.menu.add(0, 5, 4, R.string.rename_note)
+        m.menu.add(0, 6, 5, R.string.autosave).apply { isCheckable = true; isChecked = autoSave }
         m.setOnMenuItemClickListener {
             when (it.itemId) {
                 5 -> { renameNote(); return@setOnMenuItemClickListener true }
+                6 -> {
+                    autoSave = !autoSave
+                    if (autoSave && dirty) save()
+                }
                 1 -> canvasView.fingerDraws = !canvasView.fingerDraws
                 2 -> canvasView.showGrid = !canvasView.showGrid
                 3 -> canvasView.zoomToFit()
@@ -296,6 +350,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         canvasView.highlighterWidth = prefs.getFloat("hlWidth", 18f)
         canvasView.fingerDraws = prefs.getBoolean("fingerDraws", false)
         canvasView.showGrid = prefs.getBoolean("showGrid", true)
+        autoSave = prefs.getBoolean("autoSave", true)
     }
 
     private fun saveSettings() {
@@ -307,6 +362,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             .putFloat("hlWidth", canvasView.highlighterWidth)
             .putBoolean("fingerDraws", canvasView.fingerDraws)
             .putBoolean("showGrid", canvasView.showGrid)
+            .putBoolean("autoSave", autoSave)
             .apply()
     }
 
