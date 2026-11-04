@@ -27,7 +27,6 @@
     <string name="import_pdf">Import PDF</string>
     <string name="more">More</string>
     <string name="back">Back</string>
-    <string name="color_and_width">Color and width</string>
     <string name="finger_draws">Finger draws</string>
     <string name="background">Background…</string>
     <string name="background_title">Background</string>
@@ -48,6 +47,21 @@
     <string name="saved">Saved</string>
     <string name="save_failed">Saving failed.</string>
     <string name="autosave">Auto-save</string>
+    <string name="search_hint">Search notes and groups</string>
+    <string name="sort_recent">Recent</string>
+    <string name="sort_name">A–Z</string>
+    <string name="section_groups">Groups</string>
+    <string name="section_notes">Notes</string>
+    <string name="section_results">Results</string>
+    <string name="empty_title">A blank canvas</string>
+    <string name="empty_group_title">Nothing here yet</string>
+    <string name="no_results_title">No matches</string>
+    <string name="no_results">Nothing is called “%1$s”.</string>
+    <string name="stats">%1$s · %2$s</string>
+    <plurals name="group_count">
+        <item quantity="one">%d group</item>
+        <item quantity="other">%d groups</item>
+    </plurals>
     <string name="new_group">New group</string>
     <string name="name_new_group">Name the group</string>
     <string name="rename_group">Rename group</string>

@@ -9,13 +9,19 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.text.format.DateUtils
 import android.util.LruCache
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
-import android.widget.GridView
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import android.window.OnBackInvokedCallback
@@ -26,35 +32,53 @@ import java.io.File
 import java.text.DateFormat
 import java.util.Date
 import java.util.concurrent.Executors
+import kotlin.math.max
 
 /**
- * The note library: groups (as cards) followed by notes that aren't in a group.
- * Tapping a group shows just its notes; back returns to everything.
+ * The note library: a header with counts, search and sort, then a "Groups" section and a
+ * "Notes" section of cards. Tapping a group shows just its notes; back returns to everything.
+ *
+ * Laid out as a ListView of rows (section headers, and rows of N cards) so sections can span
+ * the full width while rows are still recycled.
  */
 class LibraryActivity : Activity() {
     private lateinit var store: NoteStore
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private var exportDir: File? = null
+    private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
 
     private sealed class Item {
         class GroupItem(val group: NoteStore.Group, val notes: List<NoteStore.NoteInfo>) : Item()
         class NoteItem(val note: NoteStore.NoteInfo) : Item()
     }
 
+    private sealed class Row {
+        class Section(val title: String, val count: Int) : Row()
+        class Cards(val items: List<Item>) : Row()
+    }
+
     private var allNotes: List<NoteStore.NoteInfo> = emptyList()
     private var groups: List<NoteStore.Group> = emptyList()
-    private var items: List<Item> = emptyList()
+    private var rows: List<Row> = emptyList()
+    private var columns = 3
+    private var sortByName = false
+    private var query = ""
 
     /** The group being shown, or null for the top level. Kept across recreation (e.g. theme change). */
     private var currentGroupId: String? = null
     private val currentGroup get() = groups.firstOrNull { it.id == currentGroupId }
 
-    private lateinit var grid: GridView
-    private lateinit var empty: TextView
+    private lateinit var list: ListView
+    private lateinit var empty: View
     private lateinit var headerTitle: TextView
+    private lateinit var headerSubtitle: TextView
     private lateinit var btnUp: View
+    private lateinit var logo: View
     private lateinit var btnNewGroup: View
+    private lateinit var search: EditText
+    private lateinit var sortRecent: View
+    private lateinit var sortName: View
 
     // Previews are decoded (or regenerated when stale) on their own thread so
     // they never hold up opening, importing or exporting notes.
@@ -72,25 +96,27 @@ class LibraryActivity : Activity() {
         store = NoteStore(this)
         applySystemBarInsets(findViewById(R.id.root))
         currentGroupId = savedInstanceState?.getString(STATE_GROUP)
+        sortByName = prefs.getBoolean("librarySortByName", false)
 
-        grid = findViewById(R.id.grid)
+        list = findViewById(R.id.list)
         empty = findViewById(R.id.empty)
         headerTitle = findViewById(R.id.header_title)
+        headerSubtitle = findViewById(R.id.header_subtitle)
         btnUp = findViewById(R.id.btn_up)
+        logo = findViewById(R.id.logo)
         btnNewGroup = findViewById(R.id.btn_new_group)
-        grid.adapter = adapter
-        grid.setOnItemClickListener { _, _, pos, _ ->
-            when (val it = items[pos]) {
-                is Item.GroupItem -> showGroup(it.group.id)
-                is Item.NoteItem -> open(it.note.dir)
+        search = findViewById(R.id.search)
+        sortRecent = findViewById(R.id.sort_recent)
+        sortName = findViewById(R.id.sort_name)
+        list.adapter = adapter
+
+        // Column count follows the available width (cards are at least ~200dp wide).
+        list.addOnLayoutChangeListener { v, l, _, r, _, ol, _, or_, _ ->
+            if (r - l != or_ - ol) {
+                val dp = resources.displayMetrics.density
+                val cols = max(2, ((v.width - v.paddingLeft - v.paddingRight) / dp / 210f).toInt())
+                if (cols != columns) { columns = cols; rebuildRows() } else adapter.notifyDataSetChanged()
             }
-        }
-        grid.setOnItemLongClickListener { _, _, pos, _ ->
-            when (val it = items[pos]) {
-                is Item.GroupItem -> showGroupActions(it.group)
-                is Item.NoteItem -> showActions(it.note)
-            }
-            true
         }
 
         btnUp.setOnClickListener { showGroup(null) }
@@ -120,6 +146,18 @@ class LibraryActivity : Activity() {
             }
             startActivityForResult(i, REQ_IMPORT)
         }
+
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                query = s?.toString()?.trim().orEmpty()
+                rebuildRows()
+            }
+        })
+        sortRecent.setOnClickListener { setSort(false) }
+        sortName.setOnClickListener { setSort(true) }
+        updateSortChips()
         updateHeader()
     }
 
@@ -139,23 +177,40 @@ class LibraryActivity : Activity() {
         super.onDestroy()
     }
 
-    // ---------------------------------------------------------------- navigation
+    // ---------------------------------------------------------------- navigation & state
+
+    private fun setSort(byName: Boolean) {
+        sortByName = byName
+        prefs.edit().putBoolean("librarySortByName", byName).apply()
+        updateSortChips()
+        rebuildRows()
+    }
+
+    private fun updateSortChips() {
+        sortRecent.isSelected = !sortByName
+        sortName.isSelected = sortByName
+    }
 
     private fun showGroup(id: String?) {
         currentGroupId = id
         updateHeader()
-        rebuildItems()
-        grid.setSelection(0)
+        rebuildRows()
+        list.setSelection(0)
     }
 
     private fun updateHeader() {
         val g = currentGroup
+        val inGroup = currentGroupId != null
         headerTitle.text = g?.name ?: getString(R.string.app_name)
-        btnUp.visibility = if (currentGroupId != null) View.VISIBLE else View.GONE
-        btnNewGroup.visibility = if (currentGroupId == null) View.VISIBLE else View.GONE
+        val noteCount = if (inGroup) allNotes.count { it.groupId == currentGroupId } else allNotes.size
+        val notesText = resources.getQuantityString(R.plurals.note_count, noteCount, noteCount)
+        headerSubtitle.text = if (inGroup) notesText else
+            getString(R.string.stats, notesText, resources.getQuantityString(R.plurals.group_count, groups.size, groups.size))
+        btnUp.visibility = if (inGroup) View.VISIBLE else View.GONE
+        logo.visibility = if (inGroup) View.GONE else View.VISIBLE
+        btnNewGroup.visibility = if (inGroup) View.GONE else View.VISIBLE
         // Inside a group, back goes up to all notes instead of leaving the app.
         if (Build.VERSION.SDK_INT >= 33) {
-            val inGroup = currentGroupId != null
             if (inGroup && backCallback == null) {
                 backCallback = OnBackInvokedCallback { showGroup(null) }.also {
                     onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, it)
@@ -181,25 +236,65 @@ class LibraryActivity : Activity() {
                 groups = g
                 if (currentGroupId != null && currentGroup == null) currentGroupId = null // group was deleted
                 updateHeader()
-                rebuildItems()
+                rebuildRows()
             }
         }
     }
 
-    private fun rebuildItems() {
+    private fun sortNotes(notes: List<NoteStore.NoteInfo>) =
+        if (sortByName) notes.sortedBy { it.title.lowercase() } else notes.sortedByDescending { it.modified }
+
+    private fun rebuildRows() {
         val known = groups.map { it.id }.toHashSet()
         val group = currentGroupId
-        items = if (group != null) {
-            allNotes.filter { it.groupId == group }.map { Item.NoteItem(it) }
-        } else {
-            val byGroup = allNotes.filter { it.groupId in known }.groupBy { it.groupId }
-            // Groups first (with their notes, newest first), then notes not in any (existing) group.
-            groups.map { Item.GroupItem(it, byGroup[it.id].orEmpty()) } +
-                allNotes.filter { it.groupId == null || it.groupId !in known }.map { Item.NoteItem(it) }
+        val q = query.lowercase()
+        val out = ArrayList<Row>()
+
+        fun addSection(titleRes: Int, items: List<Item>) {
+            if (items.isEmpty()) return
+            out.add(Row.Section(getString(titleRes), items.size))
+            items.chunked(columns).forEach { out.add(Row.Cards(it)) }
         }
+
+        when {
+            q.isNotEmpty() -> {
+                // Search everything, wherever it lives.
+                val gs = groups.filter { it.name.lowercase().contains(q) }
+                    .map { g -> Item.GroupItem(g, sortNotes(allNotes.filter { it.groupId == g.id })) }
+                val ns = sortNotes(allNotes.filter { it.title.lowercase().contains(q) }).map { Item.NoteItem(it) }
+                addSection(R.string.section_groups, gs)
+                addSection(R.string.section_notes, ns)
+            }
+            group != null -> {
+                addSection(R.string.section_notes, sortNotes(allNotes.filter { it.groupId == group }).map { Item.NoteItem(it) })
+            }
+            else -> {
+                val byGroup = allNotes.filter { it.groupId in known }.groupBy { it.groupId }
+                var gs = groups.map { Item.GroupItem(it, sortNotes(byGroup[it.id].orEmpty())) }
+                if (!sortByName) gs = gs.sortedByDescending { gi -> gi.notes.maxOfOrNull { it.modified } ?: 0L }
+                addSection(R.string.section_groups, gs)
+                addSection(
+                    R.string.section_notes,
+                    sortNotes(allNotes.filter { it.groupId == null || it.groupId !in known }).map { Item.NoteItem(it) },
+                )
+            }
+        }
+        rows = out
         adapter.notifyDataSetChanged()
-        empty.setText(if (group != null) R.string.empty_group else R.string.empty_library)
-        empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+        updateEmptyState(group, q)
+    }
+
+    private fun updateEmptyState(group: String?, q: String) {
+        val isEmpty = rows.isEmpty()
+        empty.visibility = if (isEmpty) View.VISIBLE else View.GONE
+        if (!isEmpty) return
+        val title = findViewById<TextView>(R.id.empty_title)
+        val text = findViewById<TextView>(R.id.empty_text)
+        when {
+            q.isNotEmpty() -> { title.setText(R.string.no_results_title); text.text = getString(R.string.no_results, query) }
+            group != null -> { title.setText(R.string.empty_group_title); text.setText(R.string.empty_group) }
+            else -> { title.setText(R.string.empty_title); text.setText(R.string.empty_library) }
+        }
     }
 
     private fun open(dir: File) {
@@ -337,7 +432,7 @@ class LibraryActivity : Activity() {
         }
     }
 
-    // ---------------------------------------------------------------- grid
+    // ---------------------------------------------------------------- previews
 
     private fun thumbKey(n: NoteStore.NoteInfo) = "${n.dir.name}@${n.modified}"
 
@@ -358,7 +453,7 @@ class LibraryActivity : Activity() {
                 if (bmp == null || isDestroyed) return@post
                 thumbCache.put(key, bmp)
                 // Only views still showing this note (views are recycled; group mosaics hold several).
-                setThumbWhereTagged(grid, key, bmp)
+                setThumbWhereTagged(list, key, bmp)
             }
         }
     }
@@ -368,48 +463,97 @@ class LibraryActivity : Activity() {
         if (v is ViewGroup) for (i in 0 until v.childCount) setThumbWhereTagged(v.getChildAt(i), key, bmp)
     }
 
+    // ---------------------------------------------------------------- rows
+
     private val adapter = object : BaseAdapter() {
-        override fun getCount() = items.size
-        override fun getItem(position: Int) = items[position]
+        override fun getCount() = rows.size
+        override fun getItem(position: Int) = rows[position]
         override fun getItemId(position: Int) = position.toLong()
         override fun getViewTypeCount() = 2
-        override fun getItemViewType(position: Int) = if (items[position] is Item.GroupItem) 0 else 1
+        override fun getItemViewType(position: Int) = if (rows[position] is Row.Section) 0 else 1
+        override fun isEnabled(position: Int) = false // cards handle their own clicks
 
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val colW = grid.columnWidth
-            return when (val item = items[position]) {
-                is Item.GroupItem -> {
-                    val v = convertView ?: layoutInflater.inflate(R.layout.item_group, parent, false)
-                    keepAspect(v.findViewById(R.id.mosaic), colW)
-                    val tiles = intArrayOf(R.id.t0, R.id.t1, R.id.t2, R.id.t3)
-                    for (k in tiles.indices) bindThumb(v.findViewById(tiles[k]), item.notes.getOrNull(k))
-                    v.findViewById<TextView>(R.id.title).text = item.group.name
-                    v.findViewById<TextView>(R.id.subtitle).text =
-                        resources.getQuantityString(R.plurals.note_count, item.notes.size, item.notes.size)
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+            when (val row = rows[position]) {
+                is Row.Section -> {
+                    val v = convertView ?: layoutInflater.inflate(R.layout.item_section, parent, false)
+                    v.findViewById<TextView>(R.id.section_title).text = row.title
+                    v.findViewById<TextView>(R.id.section_count).text = row.count.toString()
                     v
                 }
-                is Item.NoteItem -> {
-                    val v = convertView ?: layoutInflater.inflate(R.layout.item_note, parent, false)
-                    val n = item.note
-                    val thumb = v.findViewById<ImageView>(R.id.thumb)
-                    keepAspect(thumb, colW)
-                    bindThumb(thumb, n)
-                    v.findViewById<TextView>(R.id.title).text = n.title.ifEmpty { getString(R.string.untitled) }
-                    v.findViewById<TextView>(R.id.subtitle).text = DateUtils.getRelativeTimeSpanString(
-                        n.modified, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS,
-                    )
-                    v
-                }
+                is Row.Cards -> bindCardRow(convertView as? LinearLayout, parent, row.items)
             }
-        }
+    }
 
-        /** Cards are 4:3 at whatever width the grid gives each column. */
-        private fun keepAspect(v: View, colW: Int) {
-            if (colW > 0 && v.layoutParams.height != colW * 3 / 4) {
-                v.layoutParams = v.layoutParams.apply { height = colW * 3 / 4 }
+    /** A row of [columns] equal slots; each slot holds a note or group card (reused when the type matches). */
+    private fun bindCardRow(existing: LinearLayout?, parent: ViewGroup, items: List<Item>): View {
+        val d = resources.displayMetrics.density
+        val gap = (6 * d).toInt()
+        val row = existing ?: LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        while (row.childCount < columns) {
+            row.addView(FrameLayout(this).apply { setPadding(gap, gap, gap, gap) },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        while (row.childCount > columns) row.removeViewAt(row.childCount - 1)
+
+        val listInner = list.width - list.paddingLeft - list.paddingRight
+        val slotW = if (listInner > 0) listInner / columns - 2 * gap else 0
+        val previewH = if (slotW > 0) slotW * 3 / 4 else (150 * d).toInt()
+
+        for (k in 0 until columns) {
+            val slot = row.getChildAt(k) as FrameLayout
+            val item = items.getOrNull(k)
+            if (item == null) { slot.visibility = View.INVISIBLE; continue }
+            slot.visibility = View.VISIBLE
+            val wantLayout = if (item is Item.GroupItem) R.layout.item_group else R.layout.item_note
+            var card = slot.getChildAt(0)
+            if (card == null || card.tag != wantLayout) {
+                slot.removeAllViews()
+                card = LayoutInflater.from(this).inflate(wantLayout, slot, false)
+                card.tag = wantLayout
+                slot.addView(card)
+            }
+            bindCard(card, item, previewH)
+        }
+        return row
+    }
+
+    private fun bindCard(card: View, item: Item, previewH: Int) {
+        when (item) {
+            is Item.GroupItem -> {
+                val mosaic = card.findViewById<View>(R.id.mosaic)
+                if (mosaic.layoutParams.height != previewH) mosaic.layoutParams = mosaic.layoutParams.apply { height = previewH }
+                val tiles = intArrayOf(R.id.t0, R.id.t1, R.id.t2, R.id.t3)
+                for (k in tiles.indices) bindThumb(card.findViewById(tiles[k]), item.notes.getOrNull(k))
+                card.findViewById<TextView>(R.id.title).text = item.group.name
+                val count = resources.getQuantityString(R.plurals.note_count, item.notes.size, item.notes.size)
+                val newest = item.notes.maxOfOrNull { it.modified }
+                card.findViewById<TextView>(R.id.subtitle).text =
+                    if (newest == null) count else "$count · ${relative(newest)}"
+                card.setOnClickListener { search.text.clear(); showGroup(item.group.id) }
+                card.setOnLongClickListener { showGroupActions(item.group); true }
+            }
+            is Item.NoteItem -> {
+                val n = item.note
+                val thumb = card.findViewById<ImageView>(R.id.thumb)
+                if (thumb.layoutParams.height != previewH) thumb.layoutParams = thumb.layoutParams.apply { height = previewH }
+                bindThumb(thumb, n)
+                card.findViewById<TextView>(R.id.title).text = n.title.ifEmpty { getString(R.string.untitled) }
+                // In search results, say which group a note is in.
+                val groupName = if (query.isNotEmpty()) groups.firstOrNull { it.id == n.groupId }?.name else null
+                card.findViewById<TextView>(R.id.subtitle).text =
+                    if (groupName != null) "$groupName · ${relative(n.modified)}" else relative(n.modified)
+                card.setOnClickListener { open(n.dir) }
+                card.setOnLongClickListener { showActions(n); true }
             }
         }
     }
+
+    private fun relative(t: Long): CharSequence =
+        DateUtils.getRelativeTimeSpanString(t, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
 
     companion object {
         private const val REQ_IMPORT = 1
