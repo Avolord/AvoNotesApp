@@ -198,10 +198,9 @@ files/groups.tsv                   group id <TAB> name
 
 ## Known limits and ideas
 
-- Selections can't be recolored, and PDF pages can't be rotated.
 - The clipboard is in-app only and is cleared when the app is closed.
-- Groups are one level deep, and exporting a note doesn't include its group.
 - No export to PDF yet.
+- No way yet to export a whole group at once (exporting a note always exports just that note).
 - Zoomed far out on very large notes, a bitmap level of detail would help performance.
 
 ## License
