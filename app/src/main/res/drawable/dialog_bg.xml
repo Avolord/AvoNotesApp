@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Window background of every system dialog: the same rounded card as the action sheets. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="16dp" android:insetTop="16dp"
+    android:insetRight="16dp" android:insetBottom="16dp">
+    <shape android:shape="rectangle">
+        <solid android:color="@color/popup_bg" />
+        <corners android:radius="18dp" />
+    </shape>
+</inset>

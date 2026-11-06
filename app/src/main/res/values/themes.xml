@@ -24,6 +24,15 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:alertDialogTheme">@style/AvoDialog</item>
+    </style>
+
+    <!-- Alert dialogs: rounded card, app accent for buttons and fields. -->
+    <style name="AvoDialog" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorPrimary">@color/accent</item>
+        <item name="android:textColorPrimary">@color/icon</item>
     </style>
 
     <style name="ToolButton">

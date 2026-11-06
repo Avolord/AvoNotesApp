@@ -76,6 +76,19 @@ class NoteStore(context: Context) {
         out.write(text.toByteArray(Charsets.UTF_8))
     }
 
+    /** True if another group (not [exceptId]) already has this name, ignoring case. */
+    fun groupNameTaken(name: String, exceptId: String? = null): Boolean =
+        groups().any { it.id != exceptId && it.name.trim().equals(name.trim(), ignoreCase = true) }
+
+    /** [base], or "[base] (2)", "(3)", … — the first name no group has yet. */
+    fun uniqueGroupName(base: String): String {
+        val taken = groups().map { it.name.trim().lowercase() }.toHashSet()
+        if (base.trim().lowercase() !in taken) return base
+        var n = 2
+        while ("$base ($n)".lowercase() in taken) n++
+        return "$base ($n)"
+    }
+
     fun createGroup(name: String): Group {
         val g = Group(UUID.randomUUID().toString(), name)
         writeGroups(groups() + g)
@@ -188,7 +201,7 @@ class NoteStore(context: Context) {
 
     /** Copies a group and all its notes into a new group named [name]. */
     fun duplicateGroup(group: Group, name: String): Group {
-        val g = createGroup(name)
+        val g = createGroup(uniqueGroupName(name))
         for (n in list().filter { it.groupId == group.id }) duplicateNote(n.dir, n.title, g.id)
         return g
     }
@@ -434,7 +447,7 @@ class NoteStore(context: Context) {
                 single?.deleteRecursively()
                 val dirs = groupDirs.values.toList()
                 dirs.forEach { load(it) } // validate all before creating anything visible
-                val g = createGroup(groupName!!.ifEmpty { "Group" })
+                val g = createGroup(uniqueGroupName(groupName!!.ifEmpty { "Group" }))
                 dirs.forEach { setGroup(it, g.id) }
                 return ImportResult(dirs, g)
             }

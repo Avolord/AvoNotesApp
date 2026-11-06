@@ -73,7 +73,12 @@ fun safeFileName(title: String, fallback: String) = title.ifEmpty { fallback }.r
 /**
  * Asks for a note name. [onName] gets the trimmed text (falls back to [initial] if left blank).
  */
-fun showNameDialog(context: Context, titleRes: Int, initial: String, positiveRes: Int = R.string.ok, onName: (String) -> Unit) {
+fun showNameDialog(
+    context: Context, titleRes: Int, initial: String, positiveRes: Int = R.string.ok,
+    /** Returns an error message for a name that can't be used (the OK button is disabled), or null. */
+    validate: ((String) -> String?)? = null,
+    onName: (String) -> Unit,
+) {
     val input = EditText(context).apply {
         setText(initial)
         setSelectAllOnFocus(true)
@@ -92,10 +97,27 @@ fun showNameDialog(context: Context, titleRes: Int, initial: String, positiveRes
         .create()
     input.setOnEditorActionListener { _, action, _ ->
         if (action == EditorInfo.IME_ACTION_DONE) {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick(); true
+            val ok = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            if (ok.isEnabled) ok.performClick()
+            true
         } else false
     }
     dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
     dialog.show()
     input.requestFocus()
+    if (validate != null) {
+        val ok = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        fun check() {
+            val name = input.text.toString().trim().ifEmpty { initial }
+            val error = validate(name)
+            input.error = error
+            ok.isEnabled = error == null
+        }
+        input.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) = check()
+        })
+        check()
+    }
 }

@@ -128,9 +128,7 @@ class LibraryActivity : Activity() {
 
         btnUp.setOnClickListener { showGroup(null) }
         btnNewGroup.setOnClickListener {
-            showNameDialog(this, R.string.name_new_group, getString(R.string.group_default_name), R.string.create) { name ->
-                io.execute { store.createGroup(name); main.post { refresh() } }
-            }
+            newGroupDialog { }
         }
         findViewById<View>(R.id.btn_new).setOnClickListener {
             val suggested = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date())
@@ -347,29 +345,58 @@ class LibraryActivity : Activity() {
     }
 
     private fun moveToGroup(note: NoteStore.NoteInfo) {
-        val known = groups
-        val labels = listOf(getString(R.string.no_group)) + known.map { it.name } + getString(R.string.new_group_ellipsis)
-        val checked = known.indexOfFirst { it.id == note.groupId }.let { if (it < 0) 0 else it + 1 }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.move_to_group)
-            .setSingleChoiceItems(labels.toTypedArray(), checked) { d, which ->
-                d.dismiss()
-                when (which) {
-                    0 -> setGroup(note, null)
-                    labels.size - 1 -> showNameDialog(
-                        this, R.string.name_new_group, getString(R.string.group_default_name), R.string.create,
-                    ) { name ->
-                        io.execute {
-                            val g = store.createGroup(name)
-                            store.setGroup(note.dir, g.id)
-                            main.post { refresh() }
-                        }
-                    }
-                    else -> setGroup(note, known[which - 1].id)
-                }
+        // Each group is described well enough to tell same-looking ones apart: its latest note's
+        // preview and title, how many notes it has, and when it last changed.
+        val sameName = groups.groupingBy { it.name.trim().lowercase() }.eachCount()
+        val entries = groups.map { g ->
+            val notes = allNotes.filter { it.groupId == g.id && it.dir != note.dir }.sortedByDescending { it.modified }
+            val latest = notes.firstOrNull()
+            val count = when {
+                g.id == note.groupId && notes.isEmpty() -> getString(R.string.group_picker_current_only)
+                g.id == note.groupId -> getString(R.string.group_picker_current_others, notes.size)
+                else -> resources.getQuantityString(R.plurals.note_count, notes.size, notes.size)
             }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+            var detail = if (latest == null) count else getString(
+                R.string.group_picker_detail, count, latest.title.ifEmpty { getString(R.string.untitled) }, relativeTime(latest.modified),
+            )
+            // Groups that share a name are only told apart by their notes; say so, as a hint to rename.
+            val twins = sameName[g.name.trim().lowercase()] ?: 1
+            if (twins > 1) detail = getString(R.string.group_picker_same_name, detail, twins)
+            GroupPicker.Entry(g.id, g.name, detail, latest?.let { thumbCache.get(thumbKey(it)) }, latest?.modified ?: 0L)
+        }
+        GroupPicker(this, note.title.ifEmpty { getString(R.string.untitled) }, entries, note.groupId) { choice ->
+            when (choice) {
+                GroupPicker.Choice.None -> setGroup(note, null)
+                GroupPicker.Choice.New -> newGroupDialog { g -> setGroup(note, g.id) }
+                is GroupPicker.Choice.Group -> setGroup(note, choice.id)
+            }
+        }.show()
+    }
+
+    /** Asks for a new group's name (it must not already exist), creates it, then calls [then]. */
+    private fun newGroupDialog(then: (NoteStore.Group) -> Unit) {
+        showNameDialog(
+            this, R.string.name_new_group, uniqueName(getString(R.string.group_default_name)), R.string.create,
+            validate = { groupNameError(it, null) },
+        ) { name ->
+            io.execute {
+                val g = store.createGroup(name)
+                main.post { then(g); refresh() }
+            }
+        }
+    }
+
+    /** An error message if another group already has [name], else null. */
+    private fun groupNameError(name: String, exceptId: String?): String? =
+        if (groups.any { it.id != exceptId && it.name.trim().equals(name.trim(), ignoreCase = true) })
+            getString(R.string.group_name_taken) else null
+
+    private fun uniqueName(base: String): String {
+        val taken = groups.map { it.name.trim().lowercase() }.toHashSet()
+        if (base.lowercase() !in taken) return base
+        var n = 2
+        while ("$base ($n)".lowercase() in taken) n++
+        return "$base ($n)"
     }
 
     private fun setGroup(note: NoteStore.NoteInfo, groupId: String?) {
@@ -446,7 +473,7 @@ class LibraryActivity : Activity() {
         ActionSheet(this)
             .header(group.name, subtitle, iconRes = R.drawable.ic_folder)
             .item(R.drawable.ic_rename, R.string.rename_group) {
-                showNameDialog(this, R.string.rename_group, group.name) { name ->
+                showNameDialog(this, R.string.rename_group, group.name, validate = { groupNameError(it, group.id) }) { name ->
                     io.execute { store.renameGroup(group.id, name); main.post { refresh() } }
                 }
             }
