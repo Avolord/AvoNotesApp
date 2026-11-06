@@ -37,7 +37,8 @@ More:
 - **Backgrounds per note:** dots (default), lines, grid or blank.
 - **Saving your way:** auto-save (default) or manual save with an unsaved-changes prompt.
 - **Your files, your device:** notes live in the app's storage; export any note as an `.avonote`
-  file (a zip with the ink and its PDFs) and import it anywhere.
+  file (a zip with the ink and its PDFs), or a whole group as an `.avogroup` file, and import it
+  anywhere.
 - Keyboard and mouse support: Ctrl+Z / Ctrl+Y, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+D (duplicate), Del,
   mouse-wheel pan, Ctrl+wheel zoom.
 
@@ -119,8 +120,10 @@ Add `https://github.com/Avolord/AvoNotesApp` to [Obtainium](https://github.com/I
   it off, use the Save button. Leaving with unsaved changes asks to Save, Discard or Cancel.
   (Closing the window from the system, rather than with back, can't be intercepted.)
 - **Library:** long-press a note to rename, move to a group, export (`.avonote`) or delete it.
-  Long-press a group to rename or delete it (its notes are kept). **Import** loads an `.avonote` file
-  into the group you're viewing.
+  Long-press a group to rename it, export it with all its notes (`.avogroup`), or delete it (its
+  notes are kept). Exporting a single note always exports only that note.
+  **Import** loads an `.avonote` file into the group you're viewing, or an `.avogroup` file as a new
+  group.
 
 ## Building
 
@@ -200,7 +203,6 @@ files/groups.tsv                   group id <TAB> name
 
 - The clipboard is in-app only and is cleared when the app is closed.
 - No export to PDF yet.
-- No way yet to export a whole group at once (exporting a note always exports just that note).
 - Zoomed far out on very large notes, a bitmap level of detail would help performance.
 
 ## License

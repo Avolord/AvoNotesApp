@@ -47,6 +47,7 @@ class LibraryActivity : Activity() {
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private var exportDir: File? = null
+    private var exportGroup: NoteStore.Group? = null
     private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
 
     private sealed class Item {
@@ -97,6 +98,8 @@ class LibraryActivity : Activity() {
         store = NoteStore(this)
         applySystemBarInsets(findViewById(R.id.root))
         currentGroupId = savedInstanceState?.getString(STATE_GROUP)
+        exportDir = savedInstanceState?.getString(STATE_EXPORT_DIR)?.let { File(it) }
+        exportGroup = savedInstanceState?.getString(STATE_EXPORT_GROUP)?.let { id -> store.groups().firstOrNull { it.id == id } }
         sortByName = prefs.getBoolean("librarySortByName", false)
 
         list = findViewById(R.id.list)
@@ -165,6 +168,9 @@ class LibraryActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_GROUP, currentGroupId)
+        // The save dialog may outlive this activity instance (e.g. a rotation meanwhile).
+        outState.putString(STATE_EXPORT_DIR, exportDir?.path)
+        outState.putString(STATE_EXPORT_GROUP, exportGroup?.id)
     }
 
     override fun onResume() {
@@ -370,6 +376,19 @@ class LibraryActivity : Activity() {
         startActivityForResult(i, REQ_EXPORT)
     }
 
+    /** Exports the whole group (its name and every note in it) as one ".avogroup" file. */
+    private fun exportGroup(group: NoteStore.Group) {
+        exportDir = null
+        exportGroup = group
+        val safe = group.name.ifEmpty { "group" }.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/octet-stream"
+            putExtra(Intent.EXTRA_TITLE, "$safe.avogroup")
+        }
+        startActivityForResult(i, REQ_EXPORT_GROUP)
+    }
+
     private fun confirmDelete(note: NoteStore.NoteInfo) {
         AlertDialog.Builder(this)
             .setMessage(getString(R.string.delete_confirm, note.title.ifEmpty { getString(R.string.untitled) }))
@@ -381,7 +400,9 @@ class LibraryActivity : Activity() {
     // ---------------------------------------------------------------- group actions
 
     private fun showGroupActions(group: NoteStore.Group) {
-        val items = arrayOf(getString(R.string.rename_group), getString(R.string.delete_group))
+        val items = arrayOf(
+            getString(R.string.rename_group), getString(R.string.export_group), getString(R.string.delete_group),
+        )
         AlertDialog.Builder(this)
             .setTitle(group.name)
             .setItems(items) { _, which ->
@@ -389,7 +410,8 @@ class LibraryActivity : Activity() {
                     0 -> showNameDialog(this, R.string.rename_group, group.name) { name ->
                         io.execute { store.renameGroup(group.id, name); main.post { refresh() } }
                     }
-                    1 -> AlertDialog.Builder(this)
+                    1 -> exportGroup(group)
+                    2 -> AlertDialog.Builder(this)
                         .setMessage(getString(R.string.delete_group_confirm, group.name))
                         .setPositiveButton(R.string.delete) { _, _ ->
                             io.execute { store.deleteGroup(group.id); main.post { refresh() } }
@@ -410,15 +432,39 @@ class LibraryActivity : Activity() {
         if (resultCode != RESULT_OK || uri == null) return
         when (requestCode) {
             REQ_IMPORT -> {
-                val group = currentGroupId // imported notes land in the group being viewed
+                val group = currentGroupId // an imported note lands in the group being viewed
                 io.execute {
-                    val ok = runCatching {
-                        val dir = contentResolver.openInputStream(uri)!!.use { store.import(it) }
-                        if (group != null) store.setGroup(dir, group)
-                    }.isSuccess
+                    val result = runCatching {
+                        contentResolver.openInputStream(uri)!!.use { store.import(it) }.also { r ->
+                            // A group file brings its own (new) group; a single note joins this one.
+                            if (r.group == null && group != null) r.notes.forEach { store.setGroup(it, group) }
+                        }
+                    }.getOrNull()
                     main.post {
-                        if (!ok) Toast.makeText(this, R.string.import_failed, Toast.LENGTH_LONG).show()
+                        when {
+                            result == null -> Toast.makeText(this, R.string.import_failed, Toast.LENGTH_LONG).show()
+                            result.group != null -> {
+                                Toast.makeText(
+                                    this,
+                                    resources.getQuantityString(R.plurals.imported_group, result.notes.size, result.group.name, result.notes.size),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                                showGroup(null) // the new group is a top-level group
+                            }
+                        }
                         refresh()
+                    }
+                }
+            }
+            REQ_EXPORT_GROUP -> {
+                val g = exportGroup ?: return
+                io.execute {
+                    val count = runCatching { contentResolver.openOutputStream(uri, "wt")!!.use { store.exportGroup(g, it) } }
+                        .onFailure { android.util.Log.w("AvoNotes", "group export failed", it) }.getOrNull()
+                    main.post {
+                        val msg = if (count == null) getString(R.string.export_failed)
+                        else resources.getQuantityString(R.plurals.exported_group, count, count)
+                        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -563,6 +609,9 @@ class LibraryActivity : Activity() {
     companion object {
         private const val REQ_IMPORT = 1
         private const val REQ_EXPORT = 2
+        private const val REQ_EXPORT_GROUP = 3
         private const val STATE_GROUP = "group"
+        private const val STATE_EXPORT_DIR = "exportDir"
+        private const val STATE_EXPORT_GROUP = "exportGroup"
     }
 }

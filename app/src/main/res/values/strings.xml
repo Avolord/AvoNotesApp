@@ -81,6 +81,15 @@
     <string name="name_new_group">Name the group</string>
     <string name="rename_group">Rename group</string>
     <string name="delete_group">Delete group</string>
+    <string name="export_group">Export group…</string>
+    <plurals name="exported_group">
+        <item quantity="one">Exported the group with %d note.</item>
+        <item quantity="other">Exported the group with %d notes.</item>
+    </plurals>
+    <plurals name="imported_group">
+        <item quantity="one">Imported the group “%1$s” with %2$d note.</item>
+        <item quantity="other">Imported the group “%1$s” with %2$d notes.</item>
+    </plurals>
     <string name="delete_group_confirm">Delete the group “%1$s”? Its notes are kept and moved out of the group.</string>
     <string name="move_to_group">Move to group…</string>
     <string name="no_group">No group</string>

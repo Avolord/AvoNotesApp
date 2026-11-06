@@ -36,7 +36,7 @@ import java.util.zip.ZipOutputStream
  *
  * Groups are one level deep. A note only stores its group's id, so renaming a group
  * touches a single file. An exported ".avonote" file is a zip of the note folder
- * (without its group).
+ * (without its group); an ".avogroup" file holds a group's name and all of its notes.
  */
 class NoteStore(context: Context) {
     val root = File(context.filesDir, "notes").apply { mkdirs() }
@@ -166,40 +166,96 @@ class NoteStore(context: Context) {
 
     // ---------------------------------------------------------------- export / import
 
+    /** Exports one note as an ".avonote" zip. Only that note, never its group. */
     fun export(dir: File, out: OutputStream) {
+        ZipOutputStream(BufferedOutputStream(out)).use { zip -> writeNoteEntries(dir, zip, "") }
+    }
+
+    /**
+     * Exports a group and all of its notes as one ".avogroup" zip: a [GROUP_MANIFEST] entry with
+     * the group's name first, then each note's files under "notes/<n>/" (same layout as a note).
+     */
+    fun exportGroup(group: Group, out: OutputStream): Int {
+        val notes = list().filter { it.groupId == group.id }
         ZipOutputStream(BufferedOutputStream(out)).use { zip ->
-            for (name in listOf(NOTE_FILE, TITLE_FILE, PATTERN_FILE)) {
-                val f = File(dir, name)
-                if (!f.exists()) continue
-                zip.putNextEntry(ZipEntry(name)); f.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
-            }
-            // Only PDFs the saved note references.
-            val doc = load(dir)
-            for (d in doc.pdfDocs) {
-                val f = File(pdfDir(dir), d.fileName)
-                if (!f.exists()) continue
-                zip.putNextEntry(ZipEntry("$PDF_DIR/${d.fileName}")); f.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
-            }
+            zip.putNextEntry(ZipEntry(GROUP_MANIFEST))
+            zip.write(group.name.toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+            notes.forEachIndexed { i, n -> writeNoteEntries(n.dir, zip, "$GROUP_NOTES_DIR/$i/") }
+        }
+        return notes.size
+    }
+
+    private fun writeNoteEntries(dir: File, zip: ZipOutputStream, prefix: String) {
+        for (name in listOf(NOTE_FILE, TITLE_FILE, PATTERN_FILE)) {
+            val f = File(dir, name)
+            if (!f.exists()) continue
+            zip.putNextEntry(ZipEntry(prefix + name)); f.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+        }
+        // Only PDFs the saved note references.
+        val doc = load(dir)
+        for (d in doc.pdfDocs) {
+            val f = File(pdfDir(dir), d.fileName)
+            if (!f.exists()) continue
+            zip.putNextEntry(ZipEntry("$prefix$PDF_DIR/${d.fileName}")); f.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
         }
     }
 
-    /** Imports an exported note as a new note. Returns its folder. */
-    fun import(input: InputStream): File {
-        val dir = File(root, UUID.randomUUID().toString())
-        File(dir, PDF_DIR).mkdirs()
+    /** What an import produced: the new note folders, and the new group if it was a group file. */
+    class ImportResult(val notes: List<File>, val group: Group?)
+
+    /**
+     * Imports an exported note (".avonote") as a new note, or an exported group (".avogroup") as a
+     * new group with new copies of its notes. Nothing is left behind if the file is invalid.
+     */
+    fun import(input: InputStream): ImportResult {
+        var groupName: String? = null
+        var single: File? = null
+        val groupDirs = sortedMapOf<Int, File>()
+        fun newNoteDir() = File(root, UUID.randomUUID().toString()).apply { File(this, PDF_DIR).mkdirs() }
         try {
             ZipInputStream(BufferedInputStream(input)).use { zip ->
                 while (true) {
                     val e = zip.nextEntry ?: break
-                    val target = safeTarget(dir, e.name)
-                    if (target != null && !e.isDirectory) target.outputStream().use { zip.copyTo(it) }
+                    val name = e.name
+                    when {
+                        e.isDirectory -> {}
+                        name == GROUP_MANIFEST ->
+                            groupName = zip.readBytes().toString(Charsets.UTF_8).trim().take(200)
+                        name.startsWith("$GROUP_NOTES_DIR/") -> {
+                            // notes/<n>/<file>
+                            val rest = name.removePrefix("$GROUP_NOTES_DIR/")
+                            val slash = rest.indexOf('/')
+                            val n = if (slash > 0) rest.substring(0, slash).toIntOrNull() else null
+                            if (n != null && n in 0 until MAX_GROUP_NOTES) {
+                                val dir = groupDirs.getOrPut(n) { newNoteDir() }
+                                safeTarget(dir, rest.substring(slash + 1))?.outputStream()?.use { zip.copyTo(it) }
+                            }
+                        }
+                        else -> {
+                            val dir = single ?: newNoteDir().also { single = it }
+                            safeTarget(dir, name)?.outputStream()?.use { zip.copyTo(it) }
+                        }
+                    }
                     zip.closeEntry()
                 }
             }
+            if (groupName != null) {
+                // A group file: its notes become a new group (never merged into an existing one).
+                single?.deleteRecursively()
+                val dirs = groupDirs.values.toList()
+                dirs.forEach { load(it) } // validate all before creating anything visible
+                val g = createGroup(groupName!!.ifEmpty { "Group" })
+                dirs.forEach { setGroup(it, g.id) }
+                return ImportResult(dirs, g)
+            }
+            groupDirs.values.forEach { it.deleteRecursively() }
+            val dir = single ?: throw IOException("empty file")
             load(dir) // validate
-            return dir
+            return ImportResult(listOf(dir), null)
         } catch (t: Throwable) {
-            dir.deleteRecursively()
+            single?.deleteRecursively()
+            groupDirs.values.forEach { it.deleteRecursively() }
             throw t
         }
     }
@@ -222,6 +278,10 @@ class NoteStore(context: Context) {
         const val PATTERN_FILE = "background.txt"
         const val GROUPS_FILE = "groups.tsv"
         const val PDF_DIR = "pdf"
+        /** First entry of an ".avogroup" file: the group's name. */
+        private const val GROUP_MANIFEST = "avogroup.txt"
+        private const val GROUP_NOTES_DIR = "notes"
+        private const val MAX_GROUP_NOTES = 100_000
         private val SAFE_NAME = Regex("[A-Za-z0-9._-]+") // no slashes, so no traversal
         private const val MAGIC = 0x41564E31 // "AVN1"
         private const val VERSION = 1
