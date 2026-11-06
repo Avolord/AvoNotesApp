@@ -42,8 +42,8 @@ android {
         // API 30 (Android 11): RenderNode (29) plus the WindowInsets / insets-controller APIs.
         minSdk = 30
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0-alpha"
+        versionCode = 3
+        versionName = "0.3.0-alpha"
     }
 
     signingConfigs {
