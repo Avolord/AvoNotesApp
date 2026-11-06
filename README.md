@@ -39,6 +39,8 @@ More:
 - **Your files, your device:** notes live in the app's storage; export any note as an `.avonote`
   file (a zip with the ink and its PDFs), or a whole group as an `.avogroup` file, and import it
   anywhere.
+- **Export to PDF:** the whole canvas on one page (ink stays vector, at real size), or, for notes with
+  imported PDFs, one page per PDF page with your annotations on it.
 - Keyboard and mouse support: Ctrl+Z / Ctrl+Y, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+D (duplicate), Del,
   mouse-wheel pan, Ctrl+wheel zoom.
 
@@ -119,7 +121,9 @@ Add `https://github.com/Avolord/AvoNotesApp` to [Obtainium](https://github.com/I
 - **Saving:** with auto-save on (default), notes save 1.5 s after each change and when you leave. With
   it off, use the Save button. Leaving with unsaved changes asks to Save, Discard or Cancel.
   (Closing the window from the system, rather than with back, can't be intercepted.)
-- **Library:** long-press a note to rename, move to a group, export (`.avonote`) or delete it.
+- **Export as PDF:** from a note's More panel, or long-press it in the library. Imported PDF pages are
+  re-rendered as images (about 200 dpi), so their text isn't selectable in the export.
+- **Library:** long-press a note to rename, move to a group, export (`.avonote` or PDF) or delete it.
   Long-press a group to rename it, export it with all its notes (`.avogroup`), or delete it (its
   notes are kept). Exporting a single note always exports only that note.
   **Import** loads an `.avonote` file into the group you're viewing, or an `.avogroup` file as a new
@@ -183,6 +187,7 @@ or through the environment variables `AVONOTES_KEYSTORE`, `AVONOTES_KEYSTORE_PAS
 | `pdf/PdfPageCache.kt` | Background PDF rendering, LOD cache, deep-zoom patches |
 | `io/NoteStore.kt` | Storage: notes, groups, previews, import/export |
 | `io/Thumbnailer.kt` | Library previews |
+| `io/PdfExporter.kt` | PDF export (whole canvas, or annotated PDF pages) |
 | `ui/` | Library and canvas screens, popup panels and dialogs (platform widgets only) |
 
 World units are PDF points (1/72 inch). At 100% zoom, 1 unit = 1 dp.
@@ -202,7 +207,6 @@ files/groups.tsv                   group id <TAB> name
 ## Known limits and ideas
 
 - The clipboard is in-app only and is cleared when the app is closed.
-- No export to PDF yet.
 - Zoomed far out on very large notes, a bitmap level of detail would help performance.
 
 ## License

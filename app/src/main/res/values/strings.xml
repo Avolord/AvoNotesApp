@@ -82,6 +82,12 @@
     <string name="rename_group">Rename group</string>
     <string name="delete_group">Delete group</string>
     <string name="export_group">Export group…</string>
+    <string name="export_pdf">Export as PDF…</string>
+    <string name="export_pdf_title">Export as PDF</string>
+    <string name="pdf_mode_canvas">Whole canvas on one page</string>
+    <string name="pdf_mode_pages">PDF pages with annotations (ink elsewhere is left out)</string>
+    <string name="exporting_pdf">Exporting PDF…</string>
+    <string name="pdf_nothing">This note is empty, so there is nothing to export.</string>
     <plurals name="exported_group">
         <item quantity="one">Exported the group with %d note.</item>
         <item quantity="other">Exported the group with %d notes.</item>

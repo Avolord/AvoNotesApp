@@ -49,6 +49,28 @@ object ThemePref {
 }
 
 /**
+ * Picks the PDF layout. Notes without imported PDF pages have only one sensible layout, so
+ * [onMode] is called right away for them.
+ */
+fun choosePdfExportMode(context: Context, hasPdfPages: Boolean, onMode: (com.avonotes.io.PdfExporter.Mode) -> Unit) {
+    if (!hasPdfPages) { onMode(com.avonotes.io.PdfExporter.Mode.CANVAS); return }
+    val items = arrayOf(
+        context.getString(R.string.pdf_mode_canvas),
+        context.getString(R.string.pdf_mode_pages),
+    )
+    AlertDialog.Builder(context)
+        .setTitle(R.string.export_pdf_title)
+        .setItems(items) { _, which ->
+            onMode(if (which == 1) com.avonotes.io.PdfExporter.Mode.PAGES else com.avonotes.io.PdfExporter.Mode.CANVAS)
+        }
+        .setNegativeButton(R.string.cancel, null)
+        .show()
+}
+
+/** A file name for [title] without characters file systems reject. */
+fun safeFileName(title: String, fallback: String) = title.ifEmpty { fallback }.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+
+/**
  * Asks for a note name. [onName] gets the trimmed text (falls back to [initial] if left blank).
  */
 fun showNameDialog(context: Context, titleRes: Int, initial: String, positiveRes: Int = R.string.ok, onName: (String) -> Unit) {

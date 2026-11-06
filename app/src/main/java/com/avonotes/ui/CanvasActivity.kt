@@ -28,6 +28,7 @@ import android.widget.Toast
 import com.avonotes.R
 import com.avonotes.canvas.InfiniteCanvasView
 import com.avonotes.io.NoteStore
+import com.avonotes.io.PdfExporter
 import com.avonotes.model.NoteDocument
 import com.avonotes.model.Pattern
 import com.avonotes.model.PdfDoc
@@ -426,6 +427,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         if (loaded) {
             panel.header(R.string.section_note)
             panel.action(R.string.rename_note_ellipsis) { renameNote() }
+            panel.action(R.string.export_pdf) { exportPdf() }
             panel.hint(R.string.background_title)
             val patterns = listOf(Pattern.DOTS, Pattern.LINES, Pattern.GRID, Pattern.BLANK)
             panel.choice(
@@ -458,6 +460,24 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             }
         }
         panel.showBelow(anchor, Gravity.END)
+    }
+
+    private var pendingPdfMode: PdfExporter.Mode? = null
+
+    /** Exports what's on the canvas now (saved or not) as a PDF, via the system save dialog. */
+    private fun exportPdf() {
+        if (!loaded) return
+        val snap = NoteDocument().also { canvasView.snapshot(it) }
+        if (snap.contentBounds() == null) { Toast.makeText(this, R.string.pdf_nothing, Toast.LENGTH_LONG).show(); return }
+        choosePdfExportMode(this, snap.pages.isNotEmpty()) { mode ->
+            pendingPdfMode = mode
+            val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_TITLE, safeFileName(noteTitle, "note") + ".pdf")
+            }
+            startActivityForResult(i, REQ_EXPORT_PDF)
+        }
     }
 
     /** The background is note metadata like the name: applied and written right away. */
@@ -541,6 +561,18 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         val uri = data?.data
+        if (requestCode == REQ_EXPORT_PDF && resultCode == RESULT_OK && uri != null) {
+            val mode = pendingPdfMode ?: return
+            val snap = NoteDocument().also { canvasView.snapshot(it) }
+            Toast.makeText(this, R.string.exporting_pdf, Toast.LENGTH_SHORT).show()
+            io.execute {
+                val ok = runCatching {
+                    contentResolver.openOutputStream(uri, "wt")!!.use { PdfExporter.export(snap, store.pdfDir(dir), mode, it) }
+                }.onFailure { android.util.Log.w("AvoNotes", "PDF export failed", it) }.isSuccess
+                main.post { Toast.makeText(this, if (ok) R.string.exported else R.string.export_failed, Toast.LENGTH_SHORT).show() }
+            }
+            return
+        }
         if (requestCode != REQ_PDF || resultCode != RESULT_OK || uri == null) return
         Toast.makeText(this, R.string.importing_pdf, Toast.LENGTH_SHORT).show()
         val name = displayName(uri) ?: "document.pdf"
@@ -572,6 +604,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
     companion object {
         const val EXTRA_DIR = "dir"
         private const val REQ_PDF = 10
+        private const val REQ_EXPORT_PDF = 11
         private const val AUTOSAVE_DELAY_MS = 1500L
         /** Width preview circle at the largest width (the preview box is 64 dp). */
         private const val PREVIEW_MAX_DP = 58f

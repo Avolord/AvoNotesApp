@@ -29,6 +29,7 @@ import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import com.avonotes.R
 import com.avonotes.io.NoteStore
+import com.avonotes.io.PdfExporter
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
@@ -48,6 +49,7 @@ class LibraryActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
     private var exportDir: File? = null
     private var exportGroup: NoteStore.Group? = null
+    private var exportPdfMode: PdfExporter.Mode? = null
     private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
 
     private sealed class Item {
@@ -100,6 +102,7 @@ class LibraryActivity : Activity() {
         currentGroupId = savedInstanceState?.getString(STATE_GROUP)
         exportDir = savedInstanceState?.getString(STATE_EXPORT_DIR)?.let { File(it) }
         exportGroup = savedInstanceState?.getString(STATE_EXPORT_GROUP)?.let { id -> store.groups().firstOrNull { it.id == id } }
+        exportPdfMode = savedInstanceState?.getString(STATE_EXPORT_PDF_MODE)?.let { PdfExporter.Mode.valueOf(it) }
         sortByName = prefs.getBoolean("librarySortByName", false)
 
         list = findViewById(R.id.list)
@@ -171,6 +174,7 @@ class LibraryActivity : Activity() {
         // The save dialog may outlive this activity instance (e.g. a rotation meanwhile).
         outState.putString(STATE_EXPORT_DIR, exportDir?.path)
         outState.putString(STATE_EXPORT_GROUP, exportGroup?.id)
+        outState.putString(STATE_EXPORT_PDF_MODE, exportPdfMode?.name)
     }
 
     override fun onResume() {
@@ -314,7 +318,7 @@ class LibraryActivity : Activity() {
     private fun showActions(note: NoteStore.NoteInfo) {
         val items = arrayOf(
             getString(R.string.rename), getString(R.string.move_to_group),
-            getString(R.string.export), getString(R.string.delete),
+            getString(R.string.export), getString(R.string.export_pdf), getString(R.string.delete),
         )
         AlertDialog.Builder(this)
             .setTitle(note.title.ifEmpty { getString(R.string.untitled) })
@@ -323,7 +327,8 @@ class LibraryActivity : Activity() {
                     0 -> rename(note)
                     1 -> moveToGroup(note)
                     2 -> export(note)
-                    3 -> confirmDelete(note)
+                    3 -> exportPdf(note)
+                    4 -> confirmDelete(note)
                 }
             }
             .show()
@@ -374,6 +379,28 @@ class LibraryActivity : Activity() {
             putExtra(Intent.EXTRA_TITLE, "$safe.avonote")
         }
         startActivityForResult(i, REQ_EXPORT)
+    }
+
+    /** Exports the saved note as a PDF (asks for the layout if it has PDF pages). */
+    private fun exportPdf(note: NoteStore.NoteInfo) {
+        io.execute {
+            val doc = runCatching { store.load(note.dir) }.getOrNull()
+            main.post {
+                if (doc == null) { Toast.makeText(this, R.string.export_failed, Toast.LENGTH_SHORT).show(); return@post }
+                if (doc.contentBounds() == null) { Toast.makeText(this, R.string.pdf_nothing, Toast.LENGTH_LONG).show(); return@post }
+                choosePdfExportMode(this, doc.pages.isNotEmpty()) { mode ->
+                    exportDir = note.dir
+                    exportGroup = null
+                    exportPdfMode = mode
+                    val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/pdf"
+                        putExtra(Intent.EXTRA_TITLE, safeFileName(note.title, "note") + ".pdf")
+                    }
+                    startActivityForResult(i, REQ_EXPORT_PDF)
+                }
+            }
+        }
     }
 
     /** Exports the whole group (its name and every note in it) as one ".avogroup" file. */
@@ -453,6 +480,20 @@ class LibraryActivity : Activity() {
                             }
                         }
                         refresh()
+                    }
+                }
+            }
+            REQ_EXPORT_PDF -> {
+                val dir = exportDir ?: return
+                val mode = exportPdfMode ?: return
+                Toast.makeText(this, R.string.exporting_pdf, Toast.LENGTH_SHORT).show()
+                io.execute {
+                    val ok = runCatching {
+                        val doc = store.load(dir)
+                        contentResolver.openOutputStream(uri, "wt")!!.use { PdfExporter.export(doc, store.pdfDir(dir), mode, it) }
+                    }.onFailure { android.util.Log.w("AvoNotes", "PDF export failed", it) }.isSuccess
+                    main.post {
+                        Toast.makeText(this, if (ok) R.string.exported else R.string.export_failed, Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -610,6 +651,8 @@ class LibraryActivity : Activity() {
         private const val REQ_IMPORT = 1
         private const val REQ_EXPORT = 2
         private const val REQ_EXPORT_GROUP = 3
+        private const val REQ_EXPORT_PDF = 4
+        private const val STATE_EXPORT_PDF_MODE = "exportPdfMode"
         private const val STATE_GROUP = "group"
         private const val STATE_EXPORT_DIR = "exportDir"
         private const val STATE_EXPORT_GROUP = "exportGroup"
