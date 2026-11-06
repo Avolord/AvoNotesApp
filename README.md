@@ -39,6 +39,8 @@ More:
 - **Your files, your device:** notes live in the app's storage; export any note as an `.avonote`
   file (a zip with the ink and its PDFs), or a whole group as an `.avogroup` file, and import it
   anywhere.
+- **Backups:** save everything (notes, groups, PDFs) as one `.avobackup` file, and restore it later
+  either by replacing your library or by merging it into what's already there.
 - **Export to PDF:** the whole canvas on one page (ink stays vector, at real size), or, for notes with
   imported PDFs, one page per PDF page with your annotations on it.
 - Keyboard and mouse support: Ctrl+Z / Ctrl+Y, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+D (duplicate), Del,
@@ -123,9 +125,14 @@ Add `https://github.com/Avolord/AvoNotesApp` to [Obtainium](https://github.com/I
   (Closing the window from the system, rather than with back, can't be intercepted.)
 - **Export as PDF:** from a note's More panel, or long-press it in the library. Imported PDF pages are
   re-rendered as images (about 200 dpi), so their text isn't selectable in the export.
-- **Library:** long-press a note to rename, move to a group, export (`.avonote` or PDF) or delete it.
-  Long-press a group to rename it, export it with all its notes (`.avogroup`), or delete it (its
-  notes are kept). Exporting a single note always exports only that note.
+- **Library:** long-press a note to rename, duplicate, move to a group, export (`.avonote` or PDF)
+  or delete it. Long-press a group to rename it, duplicate it (with copies of its notes), export it
+  with all its notes (`.avogroup`), or delete it (its notes are kept). Exporting a single note
+  always exports only that note.
+- **Backup and restore:** the ⋮ menu in the library header. Restoring first checks the backup, then
+  offers **Merge** (keeps your notes; notes already here are skipped, changed ones come in as
+  copies, and groups with the same name are combined) or **Replace everything** (after a
+  confirmation, the library becomes exactly the backup). Picking a backup with **Import** works too.
   **Import** loads an `.avonote` file into the group you're viewing, or an `.avogroup` file as a new
   group.
 

@@ -153,6 +153,7 @@ class LibraryActivity : Activity() {
             }
             startActivityForResult(i, REQ_IMPORT)
         }
+        findViewById<View>(R.id.btn_library_more).setOnClickListener { showLibraryMenu() }
 
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -316,22 +317,33 @@ class LibraryActivity : Activity() {
     // ---------------------------------------------------------------- note actions
 
     private fun showActions(note: NoteStore.NoteInfo) {
-        val items = arrayOf(
-            getString(R.string.rename), getString(R.string.move_to_group),
-            getString(R.string.export), getString(R.string.export_pdf), getString(R.string.delete),
-        )
-        AlertDialog.Builder(this)
-            .setTitle(note.title.ifEmpty { getString(R.string.untitled) })
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> rename(note)
-                    1 -> moveToGroup(note)
-                    2 -> export(note)
-                    3 -> exportPdf(note)
-                    4 -> confirmDelete(note)
-                }
-            }
+        val title = note.title.ifEmpty { getString(R.string.untitled) }
+        val groupName = groups.firstOrNull { it.id == note.groupId }?.name
+        val edited = getString(R.string.edited, relativeTime(note.modified))
+        val subtitle = if (groupName != null) getString(R.string.stats, edited, groupName) else edited
+        ActionSheet(this)
+            .header(title, subtitle, preview = thumbCache.get(thumbKey(note)), iconRes = R.drawable.ic_pen)
+            .item(R.drawable.ic_rename, R.string.rename) { rename(note) }
+            .item(R.drawable.ic_copy, R.string.duplicate_note) { duplicateNote(note) }
+            .item(R.drawable.ic_move, R.string.move_to_group) { moveToGroup(note) }
+            .divider()
+            .item(R.drawable.ic_export, R.string.export) { export(note) }
+            .item(R.drawable.ic_pdf_file, R.string.export_pdf) { exportPdf(note) }
+            .divider()
+            .item(R.drawable.ic_delete, R.string.delete, destructive = true) { confirmDelete(note) }
             .show()
+    }
+
+    /** Copies the note next to the original (same group), named "<title> (copy)". */
+    private fun duplicateNote(note: NoteStore.NoteInfo) {
+        val title = getString(R.string.copy_name, note.title.ifEmpty { getString(R.string.untitled) })
+        io.execute {
+            val ok = runCatching { store.duplicateNote(note.dir, title, note.groupId) }.isSuccess
+            main.post {
+                if (!ok) Toast.makeText(this, R.string.duplicate_failed, Toast.LENGTH_LONG).show()
+                refresh()
+            }
+        }
     }
 
     private fun moveToGroup(note: NoteStore.NoteInfo) {
@@ -427,28 +439,124 @@ class LibraryActivity : Activity() {
     // ---------------------------------------------------------------- group actions
 
     private fun showGroupActions(group: NoteStore.Group) {
-        val items = arrayOf(
-            getString(R.string.rename_group), getString(R.string.export_group), getString(R.string.delete_group),
-        )
-        AlertDialog.Builder(this)
-            .setTitle(group.name)
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> showNameDialog(this, R.string.rename_group, group.name) { name ->
-                        io.execute { store.renameGroup(group.id, name); main.post { refresh() } }
-                    }
-                    1 -> exportGroup(group)
-                    2 -> AlertDialog.Builder(this)
-                        .setMessage(getString(R.string.delete_group_confirm, group.name))
-                        .setPositiveButton(R.string.delete) { _, _ ->
-                            io.execute { store.deleteGroup(group.id); main.post { refresh() } }
-                        }
-                        .setNegativeButton(R.string.cancel, null)
-                        .show()
+        val notes = allNotes.filter { it.groupId == group.id }
+        val count = resources.getQuantityString(R.plurals.note_count, notes.size, notes.size)
+        val latest = notes.maxOfOrNull { it.modified }
+        val subtitle = if (latest == null) count else getString(R.string.stats, count, relativeTime(latest))
+        ActionSheet(this)
+            .header(group.name, subtitle, iconRes = R.drawable.ic_folder)
+            .item(R.drawable.ic_rename, R.string.rename_group) {
+                showNameDialog(this, R.string.rename_group, group.name) { name ->
+                    io.execute { store.renameGroup(group.id, name); main.post { refresh() } }
                 }
+            }
+            .item(R.drawable.ic_copy, R.string.duplicate_group) { duplicateGroup(group) }
+            .item(R.drawable.ic_export, R.string.export_group) { exportGroup(group) }
+            .divider()
+            .item(R.drawable.ic_delete, R.string.delete_group, destructive = true) {
+                AlertDialog.Builder(this)
+                    .setMessage(getString(R.string.delete_group_confirm, group.name))
+                    .setPositiveButton(R.string.delete) { _, _ ->
+                        io.execute { store.deleteGroup(group.id); main.post { refresh() } }
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
             }
             .show()
     }
+
+    // ---------------------------------------------------------------- backup / restore
+
+    private fun showLibraryMenu() {
+        ActionSheet(this)
+            .item(R.drawable.ic_backup, getString(R.string.backup_export), getString(R.string.backup_export_desc)) {
+                val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).format(Date())
+                val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/octet-stream"
+                    putExtra(Intent.EXTRA_TITLE, "AvoNotes backup $date.avobackup")
+                }
+                startActivityForResult(i, REQ_BACKUP)
+            }
+            .item(R.drawable.ic_restore, getString(R.string.backup_restore), getString(R.string.backup_restore_desc)) {
+                val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }
+                startActivityForResult(i, REQ_RESTORE)
+            }
+            .show()
+    }
+
+    /** Unpacks and checks the backup first; nothing changes until the user picks how to load it. */
+    private fun restoreBackup(uri: android.net.Uri) {
+        io.execute {
+            val staged = runCatching { contentResolver.openInputStream(uri)!!.use { store.stageBackup(it) } }
+                .onFailure { android.util.Log.w("AvoNotes", "backup unreadable", it) }.getOrNull()
+            main.post {
+                if (staged == null) { Toast.makeText(this, R.string.backup_invalid, Toast.LENGTH_LONG).show(); return@post }
+                chooseRestoreMode(staged)
+            }
+        }
+    }
+
+    private fun chooseRestoreMode(staged: NoteStore.StagedBackup) {
+        val notes = resources.getQuantityString(R.plurals.note_count, staged.noteCount, staged.noteCount)
+        val gs = resources.getQuantityString(R.plurals.group_count, staged.groupCount, staged.groupCount)
+        var chosen = false
+        val sheet = ActionSheet(this)
+            .header(getString(R.string.backup_title), getString(R.string.backup_summary, notes, gs), iconRes = R.drawable.ic_restore)
+            .item(R.drawable.ic_merge, getString(R.string.backup_merge), getString(R.string.backup_merge_desc)) {
+                chosen = true; applyRestore(staged, replace = false)
+            }
+            .divider()
+            .item(R.drawable.ic_delete, getString(R.string.backup_replace), getString(R.string.backup_replace_desc), destructive = true) {
+                chosen = true
+                val curNotes = resources.getQuantityString(R.plurals.note_count, allNotes.size, allNotes.size)
+                val curGroups = resources.getQuantityString(R.plurals.group_count, groups.size, groups.size)
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.backup_replace)
+                    .setMessage(getString(R.string.backup_replace_confirm, curNotes, curGroups))
+                    .setPositiveButton(R.string.backup_replace_button) { _, _ -> applyRestore(staged, replace = true) }
+                    .setNegativeButton(R.string.cancel) { _, _ -> io.execute { store.discardStaged(staged) } }
+                    .setOnCancelListener { io.execute { store.discardStaged(staged) } }
+                    .show()
+            }
+        sheet.onDismiss { if (!chosen) io.execute { store.discardStaged(staged) } }
+        sheet.show()
+    }
+
+    private fun applyRestore(staged: NoteStore.StagedBackup, replace: Boolean) {
+        io.execute {
+            val result = runCatching { store.applyBackup(staged, replace) }
+                .onFailure { android.util.Log.w("AvoNotes", "restore failed", it) }.getOrNull()
+            main.post {
+                if (result == null) Toast.makeText(this, R.string.backup_failed, Toast.LENGTH_LONG).show()
+                else {
+                    thumbCache.evictAll()
+                    val msg = if (replace) getString(R.string.backup_replaced, resources.getQuantityString(R.plurals.note_count, result.added, result.added))
+                    else getString(R.string.backup_restored, result.added, result.skipped)
+                    Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                }
+                showGroup(null)
+                refresh()
+            }
+        }
+    }
+
+    private fun duplicateGroup(group: NoteStore.Group) {
+        val name = getString(R.string.copy_name, group.name)
+        io.execute {
+            val ok = runCatching { store.duplicateGroup(group, name) }.isSuccess
+            main.post {
+                if (!ok) Toast.makeText(this, R.string.duplicate_failed, Toast.LENGTH_LONG).show()
+                refresh()
+            }
+        }
+    }
+
+    private fun relativeTime(t: Long): String =
+        DateUtils.getRelativeTimeSpanString(t, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
 
     // ---------------------------------------------------------------- import / export results
 
@@ -458,9 +566,24 @@ class LibraryActivity : Activity() {
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) return
         when (requestCode) {
+            REQ_RESTORE -> restoreBackup(uri)
+            REQ_BACKUP -> {
+                io.execute {
+                    val n = runCatching { contentResolver.openOutputStream(uri, "wt")!!.use { store.exportBackup(it) } }
+                        .onFailure { android.util.Log.w("AvoNotes", "backup failed", it) }.getOrNull()
+                    main.post {
+                        val msg = if (n == null) getString(R.string.export_failed)
+                        else getString(R.string.backup_done, resources.getQuantityString(R.plurals.note_count, n, n))
+                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
             REQ_IMPORT -> {
                 val group = currentGroupId // an imported note lands in the group being viewed
                 io.execute {
+                    // A full backup picked here gets the restore choice instead of a plain import.
+                    val kind = runCatching { contentResolver.openInputStream(uri)!!.use { store.kindOf(it) } }.getOrNull()
+                    if (kind == NoteStore.FileKind.BACKUP) { main.post { restoreBackup(uri) }; return@execute }
                     val result = runCatching {
                         contentResolver.openInputStream(uri)!!.use { store.import(it) }.also { r ->
                             // A group file brings its own (new) group; a single note joins this one.
@@ -652,6 +775,8 @@ class LibraryActivity : Activity() {
         private const val REQ_EXPORT = 2
         private const val REQ_EXPORT_GROUP = 3
         private const val REQ_EXPORT_PDF = 4
+        private const val REQ_BACKUP = 5
+        private const val REQ_RESTORE = 6
         private const val STATE_EXPORT_PDF_MODE = "exportPdfMode"
         private const val STATE_GROUP = "group"
         private const val STATE_EXPORT_DIR = "exportDir"

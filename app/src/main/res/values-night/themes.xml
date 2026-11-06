@@ -12,6 +12,7 @@
     <color name="card_border">#34342F</color>
     <color name="on_accent">#10200F</color>
     <color name="popup_border">#33FFFFFF</color>
+    <color name="danger">#EF9A9A</color>
 
     <style name="Theme.AvoNotes" parent="android:Theme.Material.NoActionBar">
         <item name="android:colorAccent">@color/accent</item>

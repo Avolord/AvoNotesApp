@@ -164,6 +164,195 @@ class NoteStore(context: Context) {
         if (!tmp.renameTo(target)) { tmp.delete(); throw IOException("rename failed: $target") }
     }
 
+    // ---------------------------------------------------------------- duplicate
+
+    /** Copies a note (ink, PDFs, background) into a new note. Returns the copy's folder. */
+    fun duplicateNote(dir: File, title: String, groupId: String?): File {
+        val copy = File(root, UUID.randomUUID().toString())
+        try {
+            File(copy, PDF_DIR).mkdirs()
+            for (name in listOf(NOTE_FILE, PATTERN_FILE)) {
+                val f = File(dir, name)
+                if (f.exists()) f.copyTo(File(copy, name))
+            }
+            pdfDir(dir).listFiles()?.forEach { it.copyTo(File(File(copy, PDF_DIR), it.name)) }
+            writeTitle(copy, title)
+            if (groupId != null) setGroup(copy, groupId)
+            load(copy) // validate
+            return copy
+        } catch (t: Throwable) {
+            copy.deleteRecursively()
+            throw t
+        }
+    }
+
+    /** Copies a group and all its notes into a new group named [name]. */
+    fun duplicateGroup(group: Group, name: String): Group {
+        val g = createGroup(name)
+        for (n in list().filter { it.groupId == group.id }) duplicateNote(n.dir, n.title, g.id)
+        return g
+    }
+
+    // ---------------------------------------------------------------- backup / restore
+
+    /**
+     * Writes everything (all notes, their groups and PDFs) as one ".avobackup" zip:
+     * [BACKUP_MANIFEST] first, then "groups.tsv", then each note under "notes/<id>/".
+     */
+    fun exportBackup(out: OutputStream): Int {
+        val notes = list()
+        ZipOutputStream(BufferedOutputStream(out)).use { zip ->
+            zip.putNextEntry(ZipEntry(BACKUP_MANIFEST)); zip.write("$BACKUP_VERSION\n".toByteArray()); zip.closeEntry()
+            if (groupsFile.exists()) {
+                zip.putNextEntry(ZipEntry(GROUPS_FILE)); groupsFile.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+            }
+            for (n in notes) {
+                val prefix = "$GROUP_NOTES_DIR/${n.dir.name}/"
+                writeNoteEntries(n.dir, zip, prefix)
+                val g = File(n.dir, GROUP_FILE)
+                if (g.exists()) { zip.putNextEntry(ZipEntry(prefix + GROUP_FILE)); g.inputStream().use { it.copyTo(zip) }; zip.closeEntry() }
+            }
+        }
+        return notes.size
+    }
+
+    /** What kind of AvoNotes file [input] is, judged by its first zip entry. */
+    enum class FileKind { NOTE, GROUP, BACKUP }
+
+    fun kindOf(input: InputStream): FileKind =
+        ZipInputStream(BufferedInputStream(input)).use { zip ->
+            when (zip.nextEntry?.name) {
+                BACKUP_MANIFEST -> FileKind.BACKUP
+                GROUP_MANIFEST -> FileKind.GROUP
+                else -> FileKind.NOTE
+            }
+        }
+
+    /** A backup unpacked and checked in a staging folder, not yet applied. */
+    class StagedBackup(val dir: File, val noteCount: Int, val groupCount: Int)
+
+    private val stagingRoot = File(root.parentFile, "restore-staging")
+
+    /**
+     * Unpacks a backup into a staging folder and validates every note. Nothing in the library
+     * changes until [applyBackup]. Throws if the file isn't a valid backup.
+     */
+    fun stageBackup(input: InputStream): StagedBackup {
+        stagingRoot.deleteRecursively()
+        val dir = File(stagingRoot, UUID.randomUUID().toString())
+        val notes = File(dir, "notes").apply { mkdirs() }
+        try {
+            var sawManifest = false
+            ZipInputStream(BufferedInputStream(input)).use { zip ->
+                while (true) {
+                    val e = zip.nextEntry ?: break
+                    val name = e.name
+                    when {
+                        e.isDirectory -> {}
+                        name == BACKUP_MANIFEST -> {
+                            val v = zip.readBytes().toString(Charsets.UTF_8).trim().toIntOrNull() ?: 0
+                            if (v > BACKUP_VERSION) throw IOException("backup was made by a newer version")
+                            sawManifest = true
+                        }
+                        name == GROUPS_FILE -> File(dir, GROUPS_FILE).outputStream().use { zip.copyTo(it) }
+                        name.startsWith("$GROUP_NOTES_DIR/") -> {
+                            val rest = name.removePrefix("$GROUP_NOTES_DIR/")
+                            val slash = rest.indexOf('/')
+                            val id = if (slash > 0) rest.substring(0, slash) else null
+                            if (id != null && SAFE_NAME.matches(id)) {
+                                val noteDir = File(notes, id).apply { File(this, PDF_DIR).mkdirs() }
+                                val leaf = rest.substring(slash + 1)
+                                val target = if (leaf == GROUP_FILE) File(noteDir, GROUP_FILE) else safeTarget(noteDir, leaf)
+                                target?.outputStream()?.use { zip.copyTo(it) }
+                            }
+                        }
+                    }
+                    zip.closeEntry()
+                }
+            }
+            if (!sawManifest) throw IOException("not a backup")
+            val noteDirs = notes.listFiles()?.toList().orEmpty()
+            noteDirs.forEach { load(it) } // validate all before anything is applied
+            val groupCount = runCatching { File(dir, GROUPS_FILE).readLines() }.getOrDefault(emptyList()).count { '\t' in it }
+            return StagedBackup(dir, noteDirs.size, groupCount)
+        } catch (t: Throwable) {
+            dir.deleteRecursively()
+            throw t
+        }
+    }
+
+    fun discardStaged(staged: StagedBackup) { staged.dir.deleteRecursively() }
+
+    /** Outcome of applying a backup: notes added, and notes skipped because they were already here. */
+    class RestoreResult(val added: Int, val skipped: Int)
+
+    /**
+     * Applies a staged backup.
+     *  - [replace] = true: the library becomes exactly the backup (current notes and groups are removed).
+     *  - [replace] = false (merge): current notes stay. Backup groups join existing groups with the
+     *    same id or name; backup notes are added, except ones already here unchanged. A note that
+     *    exists here with different content is added as a separate copy, so nothing is overwritten.
+     */
+    fun applyBackup(staged: StagedBackup, replace: Boolean): RestoreResult {
+        val stagedNotes = File(staged.dir, "notes").listFiles()?.toList().orEmpty()
+        val stagedGroups = File(staged.dir, GROUPS_FILE).let { f ->
+            if (!f.exists()) emptyList() else f.readLines(Charsets.UTF_8).mapNotNull { line ->
+                val tab = line.indexOf('\t')
+                if (tab <= 0) null else Group(line.substring(0, tab), line.substring(tab + 1))
+            }
+        }
+        try {
+            if (replace) {
+                // Swap whole folders, so a failure can't leave a half-deleted library behind.
+                val old = File(root.parentFile, "notes-replaced-${System.nanoTime()}")
+                if (!root.renameTo(old)) throw IOException("could not move the current notes aside")
+                if (!File(staged.dir, "notes").renameTo(root)) {
+                    old.renameTo(root)
+                    throw IOException("could not move the backup into place")
+                }
+                writeGroups(stagedGroups)
+                old.deleteRecursively()
+                return RestoreResult(stagedNotes.size, 0)
+            }
+
+            // Merge.
+            val current = groups()
+            val groupMap = HashMap<String, String>() // backup group id -> id to use here
+            val added = ArrayList<Group>()
+            for (g in stagedGroups) {
+                val sameId = current.firstOrNull { it.id == g.id }
+                val sameName = current.firstOrNull { it.name.equals(g.name, ignoreCase = true) }
+                when {
+                    sameId != null -> groupMap[g.id] = sameId.id
+                    sameName != null -> groupMap[g.id] = sameName.id
+                    else -> { added.add(g); groupMap[g.id] = g.id }
+                }
+            }
+            if (added.isNotEmpty()) writeGroups(current + added)
+
+            var addedNotes = 0; var skipped = 0
+            for (src in stagedNotes) {
+                val existing = File(root, src.name)
+                val target = if (existing.exists()) {
+                    if (sameNote(existing, src)) { skipped++; continue }
+                    File(root, UUID.randomUUID().toString()) // changed since the backup: keep both
+                } else existing
+                if (!src.renameTo(target)) { src.copyRecursively(target, overwrite = false) }
+                val g = readGroup(target)
+                setGroup(target, g?.let { groupMap[it] ?: it.takeIf { id -> current.any { c -> c.id == id } } })
+                addedNotes++
+            }
+            return RestoreResult(addedNotes, skipped)
+        } finally {
+            staged.dir.deleteRecursively()
+        }
+    }
+
+    /** True if two note folders hold the same content and title. */
+    private fun sameNote(a: File, b: File): Boolean =
+        readTitle(a) == readTitle(b) &&
+            runCatching { File(a, NOTE_FILE).readBytes().contentEquals(File(b, NOTE_FILE).readBytes()) }.getOrDefault(false)
+
     // ---------------------------------------------------------------- export / import
 
     /** Exports one note as an ".avonote" zip. Only that note, never its group. */
@@ -281,6 +470,9 @@ class NoteStore(context: Context) {
         /** First entry of an ".avogroup" file: the group's name. */
         private const val GROUP_MANIFEST = "avogroup.txt"
         private const val GROUP_NOTES_DIR = "notes"
+        /** First entry of an ".avobackup" file: the backup format version. */
+        private const val BACKUP_MANIFEST = "avobackup.txt"
+        private const val BACKUP_VERSION = 1
         private const val MAX_GROUP_NOTES = 100_000
         private val SAFE_NAME = Regex("[A-Za-z0-9._-]+") // no slashes, so no traversal
         private const val MAGIC = 0x41564E31 // "AVN1"

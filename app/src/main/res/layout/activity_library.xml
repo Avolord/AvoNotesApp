@@ -85,6 +85,13 @@
             android:layout_height="wrap_content"
             android:text="@string/import_note" />
 
+        <ImageButton
+            android:id="@+id/btn_library_more"
+            style="@style/ToolButton"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="@string/library_more"
+            android:src="@drawable/ic_more" />
+
         <Button
             android:id="@+id/btn_new"
             android:layout_width="wrap_content"
