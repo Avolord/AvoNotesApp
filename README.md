@@ -120,6 +120,11 @@ Add `https://github.com/Avolord/AvoNotesApp` to [Obtainium](https://github.com/I
   comes along. Deleting a page keeps the handwriting that was on it.
 - **More** panel: zoom to fit or 100%; rename the note and pick its background; and the settings
   (draw with finger, straighten lines, auto-save, theme). Everything applies right away.
+- **Top-left corner** (per note, in the More panel): the note then only extends right and down from
+  a fixed corner, like an endless sheet pinned at the top-left. You can't pan past it, ink and moved
+  or pasted selections stay inside it, and the area beyond is shaded. Turning it on for a note with
+  content puts the corner just above and left of that content. A setting makes new notes start
+  with a corner.
 - **Straighten lines** (off by default): a long stroke that is almost straight becomes an exact
   straight line when you lift the pen (a short vibration confirms it), and one that is nearly level
   or vertical snaps level or vertical. Short strokes, curves and handwriting are left alone, and
@@ -209,6 +214,7 @@ World units are PDF points (1/72 inch). At 100% zoom, 1 unit = 1 dp.
 files/notes/<uuid>/note.avn        binary ink, PDF placement and viewport (big-endian, versioned)
 files/notes/<uuid>/title.txt       name
 files/notes/<uuid>/background.txt  paper pattern (absent = dots)
+files/notes/<uuid>/corner.txt      fixed top-left corner "x y" (absent = open in all directions)
 files/notes/<uuid>/group.txt       group id (absent = no group)
 files/notes/<uuid>/thumb.webp      library preview (regenerated when stale)
 files/notes/<uuid>/pdf/<id>.pdf    embedded PDFs

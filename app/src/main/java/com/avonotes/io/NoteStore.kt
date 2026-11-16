@@ -113,6 +113,20 @@ class NoteStore(context: Context) {
         it.write(p.code.toString().toByteArray(Charsets.UTF_8))
     }
 
+    // ---------------------------------------------------------------- top-left corner
+
+    /** The note's fixed top-left corner (world units), or null for a canvas open in all directions. */
+    fun readCorner(dir: File): android.graphics.PointF? = runCatching {
+        val parts = File(dir, CORNER_FILE).readText().trim().split(' ')
+        android.graphics.PointF(parts[0].toFloat(), parts[1].toFloat())
+    }.getOrNull()
+
+    fun writeCorner(dir: File, corner: android.graphics.PointF?) {
+        val f = File(dir, CORNER_FILE)
+        if (corner == null) f.delete()
+        else atomicWrite(f) { it.write("${corner.x} ${corner.y}".toByteArray(Charsets.UTF_8)) }
+    }
+
     fun readGroup(dir: File): String? =
         runCatching { File(dir, GROUP_FILE).readText().trim() }.getOrNull()?.ifEmpty { null }
 
@@ -184,7 +198,7 @@ class NoteStore(context: Context) {
         val copy = File(root, UUID.randomUUID().toString())
         try {
             File(copy, PDF_DIR).mkdirs()
-            for (name in listOf(NOTE_FILE, PATTERN_FILE)) {
+            for (name in listOf(NOTE_FILE, PATTERN_FILE, CORNER_FILE)) {
                 val f = File(dir, name)
                 if (f.exists()) f.copyTo(File(copy, name))
             }
@@ -389,7 +403,7 @@ class NoteStore(context: Context) {
     }
 
     private fun writeNoteEntries(dir: File, zip: ZipOutputStream, prefix: String) {
-        for (name in listOf(NOTE_FILE, TITLE_FILE, PATTERN_FILE)) {
+        for (name in listOf(NOTE_FILE, TITLE_FILE, PATTERN_FILE, CORNER_FILE)) {
             val f = File(dir, name)
             if (!f.exists()) continue
             zip.putNextEntry(ZipEntry(prefix + name)); f.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
@@ -464,7 +478,7 @@ class NoteStore(context: Context) {
 
     /** Only accept the known file layout; rejects path traversal and anything unexpected. */
     private fun safeTarget(dir: File, name: String): File? {
-        if (name == NOTE_FILE || name == TITLE_FILE || name == PATTERN_FILE) return File(dir, name)
+        if (name == NOTE_FILE || name == TITLE_FILE || name == PATTERN_FILE || name == CORNER_FILE) return File(dir, name)
         if (name.startsWith("$PDF_DIR/")) {
             val leaf = name.removePrefix("$PDF_DIR/")
             if (leaf.isNotEmpty() && SAFE_NAME.matches(leaf)) return File(File(dir, PDF_DIR), leaf)
@@ -478,6 +492,7 @@ class NoteStore(context: Context) {
         const val THUMB_FILE = "thumb.webp"
         const val GROUP_FILE = "group.txt"
         const val PATTERN_FILE = "background.txt"
+        const val CORNER_FILE = "corner.txt"
         const val GROUPS_FILE = "groups.tsv"
         const val PDF_DIR = "pdf"
         /** First entry of an ".avogroup" file: the group's name. */

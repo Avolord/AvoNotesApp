@@ -125,8 +125,10 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         io.execute {
             val doc = runCatching { store.load(dir) }.getOrNull()
             val pattern = store.readPattern(dir)
+            val corner = store.readCorner(dir)
             main.post {
                 canvasView.pattern = pattern
+                canvasView.corner = corner // before setDocument, so the restored view respects it
                 if (isDestroyed) return@post
                 if (doc == null) {
                     Toast.makeText(this, R.string.load_failed, Toast.LENGTH_LONG).show()
@@ -437,9 +439,15 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
                 ),
                 patterns.indexOf(canvasView.pattern),
             ) { i -> setPattern(patterns[i]) }
+            panel.switch(R.string.corner_note, R.string.corner_note_hint, canvasView.corner != null) { on ->
+                setCorner(if (on) canvasView.suggestedCorner() else null)
+            }
         }
 
         panel.header(R.string.section_settings)
+        panel.switch(R.string.corner_default, R.string.corner_default_hint, prefs.getBoolean(PREF_DEFAULT_CORNER, false)) {
+            prefs.edit().putBoolean(PREF_DEFAULT_CORNER, it).apply()
+        }
         panel.switch(R.string.finger_draws, R.string.finger_draws_hint, canvasView.fingerDraws) {
             canvasView.fingerDraws = it; saveSettings()
         }
@@ -484,6 +492,13 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
     }
 
     /** The background is note metadata like the name: applied and written right away. */
+    /** The corner is note metadata like the background: applied and written right away. */
+    private fun setCorner(c: android.graphics.PointF?) {
+        if (!loaded) return
+        canvasView.corner = c
+        io.execute { runCatching { store.writeCorner(dir, c) } }
+    }
+
     private fun setPattern(p: Pattern) {
         if (!loaded) return
         canvasView.pattern = p
@@ -608,6 +623,8 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
 
     companion object {
         const val EXTRA_DIR = "dir"
+        /** Whether new notes start with a top-left corner (shared with the library). */
+        const val PREF_DEFAULT_CORNER = "defaultCorner"
         private const val REQ_PDF = 10
         private const val REQ_EXPORT_PDF = 11
         private const val AUTOSAVE_DELAY_MS = 1500L

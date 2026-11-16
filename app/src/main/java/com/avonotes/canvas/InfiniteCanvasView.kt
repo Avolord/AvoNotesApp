@@ -234,6 +234,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
             floatingNode.discardDisplayList()
             if (mode == Mode.MOVE) recordFloating()
             paperColor = if (v) 0xFF1E1E1C.toInt() else 0xFFFCFCFA.toInt()
+            outsidePaint.color = if (v) 0xFF141413.toInt() else 0xFFEAEAE5.toInt()
+            edgePaint.color = if (v) 0x40FFFFFF else 0x38000000
             pageFill.color = if (v) DarkInk.map(Color.WHITE) else Color.WHITE
             pageBorder.color = if (v) 0x33FFFFFF else 0x22000000
             gridPaint.color = if (v) 0x33FFFFFF else 0x33000000
@@ -251,6 +253,49 @@ class InfiniteCanvasView @JvmOverloads constructor(
             patchPaint.colorFilter = bmpPaint.colorFilter
             invalidate()
         }
+
+    // ---------------------------------------------------------------- top-left corner
+
+    /**
+     * The note's fixed top-left corner in world units, or null for a canvas open in every
+     * direction. With a corner the canvas only extends right and down: the view can't pan past
+     * it, and ink, moved or pasted selections and imported PDFs stay inside it.
+     */
+    var corner: PointF? = null
+        set(v) {
+            field = v?.let { PointF(it.x, it.y) }
+            if (loaded) clampToCorner()
+            invalidate()
+        }
+
+    private val outsidePaint = Paint().apply { color = 0xFFEAEAE5.toInt() }
+    private val edgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; color = 0x38000000; strokeWidth = 1.5f * density
+    }
+
+    /** A corner just above and left of the content (or the visible area if empty), with some room. */
+    fun suggestedCorner(): PointF {
+        val b = RectF()
+        var any = false
+        for (t in tiles.tilesSnapshot()) { if (!any) b.set(t.bounds) else b.union(t.bounds); any = true }
+        for (p in pages) { if (!any) b.set(p.bounds) else b.union(p.bounds); any = true }
+        if (!any) { val v = visibleWorld(); return PointF(v.left + 24f, v.top + 24f) }
+        return PointF(b.left - CORNER_ROOM, b.top - CORNER_ROOM)
+    }
+
+    /** Keeps the corner at or beyond the screen's top-left (plus a small visible margin). */
+    private fun clampToCorner() {
+        val c = corner ?: return
+        val m = CORNER_MARGIN_DP * density
+        tx = min(tx, m - c.x * zoom)
+        ty = min(ty, topInset + m - c.y * zoom)
+    }
+
+    /** How far (dx, dy ≥ 0) something with world [bounds] must move to sit inside the corner. */
+    private fun intoCorner(bounds: RectF): PointF {
+        val c = corner ?: return PointF(0f, 0f)
+        return PointF(max(0f, c.x - bounds.left), max(0f, c.y - bounds.top))
+    }
 
     private val patchRunnable = Runnable { requestPatches() }
 
@@ -274,6 +319,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
         if (doc.viewZoom > 0f) { zoom = doc.viewZoom; tx = doc.viewX; ty = doc.viewY }
         else { zoom = density; tx = 24f * density; ty = topInset + 24f * density }
         loaded = true
+        clampToCorner()
         notifyHistory()
         invalidate()
     }
@@ -308,8 +354,9 @@ class InfiniteCanvasView @JvmOverloads constructor(
         val v = visibleWorld()
         val gap = 24f
         val maxW = pageSizes.maxOfOrNull { it.first } ?: return
-        val x = v.centerX() - maxW / 2f
+        var x = v.centerX() - maxW / 2f
         var y = v.top + gap
+        corner?.let { c -> x = max(x, c.x + gap); y = max(y, c.y + gap) }
         val items = pageSizes.mapIndexed { i, (w, h) ->
             PdfPageItem(doc.id, i, x + (maxW - w) / 2f, y, w, h).also { y += h + gap }
         }
@@ -467,8 +514,19 @@ class InfiniteCanvasView @JvmOverloads constructor(
         addCopies(c.strokes, pgs, m)
     }
 
-    private fun addCopies(strokes: List<Stroke>, pgs: List<PdfPageItem>, m: Matrix) {
+    private fun addCopies(strokes: List<Stroke>, pgs: List<PdfPageItem>, place: Matrix) {
         if (strokes.isEmpty() && pgs.isEmpty()) return
+        // Keep the copies inside the note's corner, if it has one.
+        val m = Matrix(place)
+        if (corner != null) {
+            val b = RectF()
+            var any = false
+            for (s in strokes) { if (!any) b.set(s.bounds) else b.union(s.bounds); any = true }
+            for (p in pgs) { if (!any) b.set(p.bounds) else b.union(p.bounds); any = true }
+            m.mapRect(b)
+            val d = intoCorner(b)
+            m.postTranslate(d.x, d.y)
+        }
         val newStrokes = strokes.sortedBy { it.seq }.map { s -> s.transformed(m, 1f).also { it.seq = nextSeq++ } }
         val newPages = pgs.map { it.transformed(m) }
         clearSelection()
@@ -595,6 +653,13 @@ class InfiniteCanvasView @JvmOverloads constructor(
                 liveMatrix.setRotate(a, pivotX, pivotY)
             }
         }
+        // Nothing moves or grows past the note's corner: push it back inside.
+        if (corner != null) {
+            tmpRect2.set(selBounds)
+            liveMatrix.mapRect(tmpRect2)
+            val d = intoCorner(tmpRect2)
+            liveMatrix.postTranslate(d.x, d.y)
+        }
         invalidate()
     }
 
@@ -712,6 +777,7 @@ class InfiniteCanvasView @JvmOverloads constructor(
     }
 
     private fun transformChanged() {
+        clampToCorner()
         pdfCache?.cancelPatchRequests()
         removeCallbacks(patchRunnable)
         postDelayed(patchRunnable, PATCH_DELAY_MS)
@@ -916,8 +982,9 @@ class InfiniteCanvasView @JvmOverloads constructor(
     }
 
     private fun addPoint(sx: Float, sy: Float, p: Float) {
-        val wx = (sx - tx) / zoom
-        val wy = (sy - ty) / zoom
+        var wx = (sx - tx) / zoom
+        var wy = (sy - ty) / zoom
+        corner?.let { c -> wx = max(wx, c.x); wy = max(wy, c.y) } // ink stays inside the corner
         if (liveCount > 0) {
             val lx = livePts[(liveCount - 1) * 3]; val ly = livePts[(liveCount - 1) * 3 + 1]
             val minD = MIN_POINT_DIST_PX / zoom
@@ -1141,6 +1208,14 @@ class InfiniteCanvasView @JvmOverloads constructor(
         visible.set((0 - tx) / zoom, (0 - ty) / zoom, (width - tx) / zoom, (height - ty) / zoom)
 
         drawPattern(canvas)
+        corner?.let { c ->
+            // Shade what lies beyond the corner and draw its two edges.
+            val cx = c.x * zoom + tx; val cy = c.y * zoom + ty
+            if (cy > 0f) canvas.drawRect(0f, 0f, width.toFloat(), cy, outsidePaint)
+            if (cx > 0f) canvas.drawRect(0f, max(0f, cy), cx, height.toFloat(), outsidePaint)
+            canvas.drawLine(cx, cy, width.toFloat(), cy, edgePaint)
+            canvas.drawLine(cx, cy, cx, height.toFloat(), edgePaint)
+        }
         drawPages(canvas)
 
         canvas.save()
@@ -1358,6 +1433,11 @@ class InfiniteCanvasView @JvmOverloads constructor(
         private const val PATCH_DELAY_MS = 180L
         private const val LASSO_FRACTION = 0.5f
         const val DEFAULT_ERASER_SIZE = 14f
+
+        // Top-left corner: margin kept visible beyond it on screen, and room left around content
+        // when a corner is added to an existing note (world units).
+        private const val CORNER_MARGIN_DP = 16f
+        private const val CORNER_ROOM = 32f
 
         // Straight-line detection (screen sizes in dp).
         private const val STRAIGHT_MIN_DP = 60f

@@ -136,6 +136,10 @@ class LibraryActivity : Activity() {
             showNameDialog(this, R.string.name_new_note, suggested, R.string.create) { title ->
                 io.execute {
                     val dir = store.create(title, group)
+                    // New notes start at a fixed top-left corner if that's the chosen default.
+                    if (prefs.getBoolean(CanvasActivity.PREF_DEFAULT_CORNER, false)) {
+                        store.writeCorner(dir, android.graphics.PointF(0f, 0f))
+                    }
                     main.post { open(dir) }
                 }
             }

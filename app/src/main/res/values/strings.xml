@@ -40,6 +40,10 @@
     <string name="section_settings">Settings</string>
     <string name="zoom_100">100%</string>
     <string name="rename_note_ellipsis">Rename…</string>
+    <string name="corner_note">Top-left corner</string>
+    <string name="corner_note_hint">This note only extends right and down from a fixed corner.</string>
+    <string name="corner_default">Corner for new notes</string>
+    <string name="corner_default_hint">New notes start with a fixed top-left corner.</string>
     <string name="straighten_lines">Straighten lines</string>
     <string name="straighten_lines_hint">Long, nearly straight strokes become exact lines; nearly level ones snap level.</string>
     <string name="autosave_hint">Save changes automatically while you write.</string>
