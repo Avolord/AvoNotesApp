@@ -119,7 +119,11 @@ Add `https://github.com/Avolord/AvoNotesApp` to [Obtainium](https://github.com/I
 - **Long-press a PDF page** with a finger (or the pen in lasso mode) to pick it up and move it; its ink
   comes along. Deleting a page keeps the handwriting that was on it.
 - **More** panel: zoom to fit or 100%; rename the note and pick its background; and the settings
-  (draw with finger, auto-save, theme). Everything applies right away.
+  (draw with finger, straighten lines, auto-save, theme). Everything applies right away.
+- **Straighten lines** (off by default): a long stroke that is almost straight becomes an exact
+  straight line when you lift the pen (a short vibration confirms it), and one that is nearly level
+  or vertical snaps level or vertical. Short strokes, curves and handwriting are left alone, and
+  pressure tapering is kept. Undo removes the stroke.
 - **Saving:** with auto-save on (default), notes save 1.5 s after each change and when you leave. With
   it off, use the Save button. Leaving with unsaved changes asks to Save, Discard or Cancel.
   (Closing the window from the system, rather than with back, can't be intercepted.)

@@ -40,6 +40,8 @@
     <string name="section_settings">Settings</string>
     <string name="zoom_100">100%</string>
     <string name="rename_note_ellipsis">Rename…</string>
+    <string name="straighten_lines">Straighten lines</string>
+    <string name="straighten_lines_hint">Long, nearly straight strokes become exact lines; nearly level ones snap level.</string>
     <string name="autosave_hint">Save changes automatically while you write.</string>
     <string name="eraser_stroke">Whole stroke</string>
     <string name="eraser_partial">Partial</string>

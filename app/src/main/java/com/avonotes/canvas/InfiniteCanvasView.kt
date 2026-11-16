@@ -70,6 +70,8 @@ class InfiniteCanvasView @JvmOverloads constructor(
     var highlighterColor = 0x66FFEB3B
     var highlighterWidth = 18f
     var fingerDraws = false
+    /** Turn long, nearly straight strokes into exact straight lines (see [straightened]). */
+    var straightenLines = false
     /** Paper pattern of the open note (per note; dots by default). */
     var pattern = Pattern.DOTS
         set(v) { field = v; invalidate() }
@@ -987,7 +989,12 @@ class InfiniteCanvasView @JvmOverloads constructor(
                 val i = e.findPointerIndex(activePointer)
                 if (i >= 0) addPoint(e.getX(i), e.getY(i), pressureOf(e, i, -1))
                 if (liveCount > 0) {
-                    val s = Stroke(liveTool, liveColor, liveWidth, livePts.copyOf(liveCount * 3))
+                    var pts = livePts.copyOf(liveCount * 3)
+                    if (straightenLines) straightened(pts)?.let {
+                        pts = it
+                        performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    }
+                    val s = Stroke(liveTool, liveColor, liveWidth, pts)
                     s.seq = nextSeq++
                     apply(Edit.AddStrokes(listOf(s)), record = true)
                 }
@@ -1006,6 +1013,50 @@ class InfiniteCanvasView @JvmOverloads constructor(
         mode = Mode.NONE
         activePointer = -1
         invalidate()
+    }
+
+    /**
+     * If [pts] (x, y, pressure triples, world units) is a long, nearly straight stroke, returns the
+     * same samples moved onto the exact line between its ends, else null. Thresholds are in screen
+     * terms, so they feel the same at every zoom:
+     *  - at least [STRAIGHT_MIN_DP] long on screen,
+     *  - no point strays more than [STRAIGHT_MAX_DEV_DP] (or 3.5% of the length) from the line,
+     *  - the drawn path is at most 6% longer than the line (no hooks or back-and-forth).
+     * Lines within [STRAIGHT_SNAP_DEG] of horizontal or vertical snap to it. Each sample keeps its
+     * pressure and its relative position along the stroke, so pressure-sensitive brushes still taper.
+     */
+    private fun straightened(pts: FloatArray): FloatArray? {
+        val n = pts.size / 3
+        if (n < 3) return null
+        val ax = pts[0]; val ay = pts[1]
+        var bx = pts[(n - 1) * 3]; var by = pts[(n - 1) * 3 + 1]
+        val chord = hypot(bx - ax, by - ay)
+        if (chord * zoom < STRAIGHT_MIN_DP * density) return null
+        val cum = FloatArray(n)
+        for (i in 1 until n) cum[i] = cum[i - 1] + hypot(pts[i * 3] - pts[i * 3 - 3], pts[i * 3 + 1] - pts[i * 3 - 2])
+        val pathLen = cum[n - 1]
+        if (pathLen > chord * 1.06f) return null
+        val maxDev = max(STRAIGHT_MAX_DEV_DP * density / zoom, chord * 0.035f)
+        val ux = (bx - ax) / chord; val uy = (by - ay) / chord
+        for (i in 1 until n - 1) {
+            val dev = abs((pts[i * 3] - ax) * uy - (pts[i * 3 + 1] - ay) * ux)
+            if (dev > maxDev) return null
+        }
+        // Snap nearly level / nearly vertical lines exactly, keeping the start point and length.
+        val angle = Math.toDegrees(atan2((by - ay).toDouble(), (bx - ax).toDouble()))
+        val nearest = Math.round(angle / 90.0) * 90.0
+        if (abs(angle - nearest) < STRAIGHT_SNAP_DEG) {
+            val rad = Math.toRadians(nearest)
+            bx = ax + (chord * Math.cos(rad)).toFloat()
+            by = ay + (chord * Math.sin(rad)).toFloat()
+        }
+        val out = pts.copyOf()
+        for (i in 0 until n) {
+            val t = if (pathLen > 0f) cum[i] / pathLen else 0f
+            out[i * 3] = ax + (bx - ax) * t
+            out[i * 3 + 1] = ay + (by - ay) * t
+        }
+        return out
     }
 
     private fun cancelInk() {
@@ -1307,6 +1358,11 @@ class InfiniteCanvasView @JvmOverloads constructor(
         private const val PATCH_DELAY_MS = 180L
         private const val LASSO_FRACTION = 0.5f
         const val DEFAULT_ERASER_SIZE = 14f
+
+        // Straight-line detection (screen sizes in dp).
+        private const val STRAIGHT_MIN_DP = 60f
+        private const val STRAIGHT_MAX_DEV_DP = 4f
+        private const val STRAIGHT_SNAP_DEG = 3.0
 
         // Selection handles and chips.
         private const val HANDLE_DP = 9f

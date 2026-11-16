@@ -443,6 +443,9 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         panel.switch(R.string.finger_draws, R.string.finger_draws_hint, canvasView.fingerDraws) {
             canvasView.fingerDraws = it; saveSettings()
         }
+        panel.switch(R.string.straighten_lines, R.string.straighten_lines_hint, canvasView.straightenLines) {
+            canvasView.straightenLines = it; saveSettings()
+        }
         panel.switch(R.string.autosave, R.string.autosave_hint, autoSave) {
             autoSave = it
             if (autoSave && dirty) save()
@@ -528,6 +531,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
         canvasView.highlighterWidth = prefs.getFloat("hlWidth", 18f)
         canvasView.fingerDraws = prefs.getBoolean("fingerDraws", false)
         canvasView.partialEraser = prefs.getBoolean("partialEraser", false)
+        canvasView.straightenLines = prefs.getBoolean("straightenLines", false)
         canvasView.eraserSize = prefs.getFloat("eraserSize", InfiniteCanvasView.DEFAULT_ERASER_SIZE)
         autoSave = prefs.getBoolean("autoSave", true)
     }
@@ -542,6 +546,7 @@ class CanvasActivity : Activity(), InfiniteCanvasView.Listener {
             .putFloat("hlWidth", canvasView.highlighterWidth)
             .putBoolean("fingerDraws", canvasView.fingerDraws)
             .putBoolean("partialEraser", canvasView.partialEraser)
+            .putBoolean("straightenLines", canvasView.straightenLines)
             .putFloat("eraserSize", canvasView.eraserSize)
             .putBoolean("autoSave", autoSave)
             .apply()
